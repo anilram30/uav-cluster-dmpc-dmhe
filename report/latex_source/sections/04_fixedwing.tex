@@ -1,0 +1,242 @@
+\chapter{Fixed-Wing UAV Dynamic Model}
+\label{ch:fixedwing}
+
+The second vehicle class is a fixed-wing aircraft. Where the hexacopter generates
+force and moment with rotors, the fixed-wing does so with aerodynamic surfaces
+and a propeller, and it cannot hover: it must maintain airspeed above stall and
+turns by banking. We adopt the six-degree-of-freedom model of Beard and McLain
+\cite{beard2012small}, the standard, fully parameterised reference model in the
+small-UAV literature, and instantiate it on the Aerosonde airframe. The Aerosonde
+serves here as a well-characterised small-scale surrogate for a
+medium-altitude, long-endurance (MALE) class platform of the kind fielded for
+persistent surveillance; the modelling is identical for a larger airframe, only
+the parameters change. Every force, moment and coefficient is stated explicitly.
+
+\section{Frames, state and controls}
+
+The aircraft uses a North--East--Down inertial frame and the standard aircraft
+body frame ($\vv{b}_1$ out the nose, $\vv{b}_2$ out the right wing, $\vv{b}_3$
+down). Attitude is described by the 3--2--1 Euler angles $(\phi,\theta,\psi)$;
+the quaternion form is available through \cref{sec:quaternions} and is used when
+a fixed-wing agent shares estimation code with a multirotor, but the aerodynamic
+literature is written in Euler angles and we keep them here. The twelve-state
+vector is
+\begin{equation}
+\state=\bigl(p_n,p_e,p_d,\ u,v,w,\ \phi,\theta,\psi,\ p,q,r\bigr)\T\in\R^{12},
+\label{eq:fw-state}
+\end{equation}
+with inertial position $(p_n,p_e,p_d)$, \emph{body-frame} velocity $(u,v,w)$,
+Euler angles $(\phi,\theta,\psi)$ and body angular rates $(p,q,r)$. The four
+control surfaces/inputs are
+\begin{equation}
+\ctrl=(\delta_e,\ \delta_a,\ \delta_r,\ \delta_t)\T,
+\label{eq:fw-input}
+\end{equation}
+the elevator, aileron, rudder and throttle, with
+$\delta_t\in[0,1]$.
+
+\section{Airspeed, angle of attack and sideslip}
+\label{sec:fw-airdata}
+
+Aerodynamic forces depend on the motion of the aircraft \emph{relative to the
+air}. With wind velocity resolved into the body frame as $(u_w,v_w,w_w)$, the
+relative (air-relative) velocity is $(u_r,v_r,w_r)=(u-u_w,\ v-v_w,\ w-w_w)$, and
+the \emph{wind-triangle} relations define the airspeed $V_a$, the angle of attack
+$\alpha$ and the sideslip angle $\beta$:
+\begin{equation}
+V_a=\sqrt{u_r^2+v_r^2+w_r^2},\qquad
+\alpha=\arctan\!\frac{w_r}{u_r},\qquad
+\beta=\arcsin\!\frac{v_r}{V_a}.
+\label{eq:windtriangle}
+\end{equation}
+In still air $(u_r,v_r,w_r)=(u,v,w)$. \Cref{fig:fw-angles} shows $\alpha$ and
+$\beta$ geometrically. The dynamic pressure is $\bar q=\tfrac12\rho V_a^2$, with
+air density $\rho$.
+
+\begin{figure}[t]
+\centering
+\begin{tikzpicture}[>=Latex,scale=1.0]
+  \draw[->,thick] (0,0)--(3.2,0) node[right]{$\vv{b}_1$ (nose)};
+  \draw[->,thick] (0,0)--(0,-1.7) node[below]{$\vv{b}_3$};
+  \draw[->,very thick,accent] (0,0)--(2.7,-1.0) node[right]{$\vv{V}_a$ (airspeed)};
+  \draw[accent] (1.1,0) arc (0:-20:1.1);
+  \node[accent] at (1.45,-0.28){$\alpha$};
+  \begin{scope}[shift={(6.5,0)}]
+    \draw[->,thick] (0,0)--(3.2,0) node[right]{$\vv{b}_1$};
+    \draw[->,thick] (0,0)--(0,1.4) node[above]{$\vv{b}_2$};
+    \draw[->,very thick,Maroon] (0,0)--(2.7,0.95) node[right]{$\vv{V}_a$};
+    \draw[Maroon] (1.1,0) arc (0:19:1.1);
+    \node[Maroon] at (1.45,0.28){$\beta$};
+  \end{scope}
+\end{tikzpicture}
+\caption{Angle of attack $\alpha$ (in the body $\vv{b}_1$--$\vv{b}_3$ plane,
+left) and sideslip $\beta$ (in the $\vv{b}_1$--$\vv{b}_2$ plane, right) as the
+orientation of the air-relative velocity $\vv{V}_a$ in the body frame.}
+\label{fig:fw-angles}
+\end{figure}
+
+\section{Kinematics}
+
+Position kinematics rotate the body velocity into the inertial frame by
+$\mat{R}_b^i(\phi,\theta,\psi)$, and the Euler angles evolve through the standard
+$\mat{W}(\phi,\theta)$ kinematic matrix:
+\begin{equation}
+\begin{bmatrix}\dot p_n\\\dot p_e\\\dot p_d\end{bmatrix}
+=\mat{R}_b^i\begin{bmatrix}u\\v\\w\end{bmatrix},
+\qquad
+\begin{bmatrix}\dot\phi\\\dot\theta\\\dot\psi\end{bmatrix}
+=\begin{bmatrix}
+1 & \sin\phi\tan\theta & \cos\phi\tan\theta\\
+0 & \cos\phi & -\sin\phi\\
+0 & \sin\phi\sec\theta & \cos\phi\sec\theta
+\end{bmatrix}
+\begin{bmatrix}p\\q\\r\end{bmatrix}.
+\label{eq:fw-kin}
+\end{equation}
+The $\sec\theta$ terms expose the gimbal-lock singularity at $\theta=\pm\tfrac\pi2$;
+a fixed-wing aircraft in normal flight stays far from it.
+
+\section{Forces and moments}
+
+The total force in the body frame is the sum of gravity, aerodynamics and
+propulsion; the total moment is the sum of aerodynamic and propulsive moments.
+
+\paragraph{Gravity.} Gravity is constant in the inertial frame and rotates into
+the body frame as
+\begin{equation}
+\vv{F}_g^{b}=m g\bigl(-\sin\theta,\ \cos\theta\sin\phi,\ \cos\theta\cos\phi\bigr)\T.
+\label{eq:fw-grav}
+\end{equation}
+
+\paragraph{Longitudinal aerodynamics with stall.} Lift and drag act in the
+stability frame and are rotated into the body $x$--$z$ plane through $\alpha$. The
+lift coefficient blends a linear (attached-flow) model with a flat-plate
+post-stall model through a sigmoid $\sigma(\alpha)$ centred on the stall angle
+$\alpha_0$ \cite{beard2012small}:
+\begin{equation}
+C_L(\alpha)=\bigl(1-\sigma(\alpha)\bigr)\bigl(C_{L_0}+C_{L_\alpha}\alpha\bigr)
++\sigma(\alpha)\,\bigl(2\,\mathrm{sign}(\alpha)\sin^2\!\alpha\cos\alpha\bigr),
+\label{eq:CL}
+\end{equation}
+\begin{equation}
+\sigma(\alpha)=\frac{1+e^{-M(\alpha-\alpha_0)}+e^{M(\alpha+\alpha_0)}}
+{\bigl(1+e^{-M(\alpha-\alpha_0)}\bigr)\bigl(1+e^{M(\alpha+\alpha_0)}\bigr)},
+\label{eq:sigma}
+\end{equation}
+where $M$ sets the sharpness of the transition. For $|\alpha|\ll\alpha_0$,
+$\sigma\to0$ and $C_L\to C_{L_0}+C_{L_\alpha}\alpha$; past stall, $\sigma\to1$ and
+$C_L$ follows the flat-plate curve. The drag uses the parabolic (induced-drag)
+polar with Oswald efficiency $e$ and aspect ratio $\mathrm{AR}=b^2/S$,
+\begin{equation}
+C_D(\alpha)=C_{D_p}+\frac{\bigl(C_{L_0}+C_{L_\alpha}\alpha\bigr)^2}{\pi e\,\mathrm{AR}}.
+\label{eq:CD}
+\end{equation}
+Adding the pitch-rate and elevator increments, the total longitudinal
+coefficients are
+\begin{align}
+C_L^{\mathrm{tot}}&=C_L(\alpha)+C_{L_q}\tfrac{c}{2V_a}q+C_{L_{\delta_e}}\delta_e,&
+C_D^{\mathrm{tot}}&=C_D(\alpha)+C_{D_q}\tfrac{c}{2V_a}q+C_{D_{\delta_e}}\delta_e,
+\end{align}
+and the body-frame aerodynamic force components in the $x$--$z$ plane are the
+rotation of $(-D,-L)$ through $\alpha$,
+\begin{equation}
+F_x^{a}=\bar qS\bigl(-C_D^{\mathrm{tot}}\cos\alpha+C_L^{\mathrm{tot}}\sin\alpha\bigr),
+\qquad
+F_z^{a}=\bar qS\bigl(-C_D^{\mathrm{tot}}\sin\alpha-C_L^{\mathrm{tot}}\cos\alpha\bigr).
+\label{eq:fw-fxfz}
+\end{equation}
+The pitch moment is
+\begin{equation}
+m^{a}=\bar qSc\Bigl(C_{m_0}+C_{m_\alpha}\alpha+C_{m_q}\tfrac{c}{2V_a}q
++C_{m_{\delta_e}}\delta_e\Bigr).
+\label{eq:fw-m}
+\end{equation}
+
+\paragraph{Lateral aerodynamics.} The side force and the roll/yaw moments are
+linear in sideslip, the non-dimensional roll/yaw rates and the aileron/rudder
+deflections:
+\begin{align}
+F_y^{a}&=\bar qS\Bigl(C_{Y_0}+C_{Y_\beta}\beta+C_{Y_p}\tfrac{b}{2V_a}p
++C_{Y_r}\tfrac{b}{2V_a}r+C_{Y_{\delta_a}}\delta_a+C_{Y_{\delta_r}}\delta_r\Bigr),\label{eq:fw-fy}\\
+\ell^{a}&=\bar qSb\Bigl(C_{\ell_0}+C_{\ell_\beta}\beta+C_{\ell_p}\tfrac{b}{2V_a}p
++C_{\ell_r}\tfrac{b}{2V_a}r+C_{\ell_{\delta_a}}\delta_a+C_{\ell_{\delta_r}}\delta_r\Bigr),\label{eq:fw-l}\\
+n^{a}&=\bar qSb\Bigl(C_{n_0}+C_{n_\beta}\beta+C_{n_p}\tfrac{b}{2V_a}p
++C_{n_r}\tfrac{b}{2V_a}r+C_{n_{\delta_a}}\delta_a+C_{n_{\delta_r}}\delta_r\Bigr).\label{eq:fw-n}
+\end{align}
+
+\paragraph{Propulsion.} The propeller produces thrust along the body $x$-axis and
+a reaction torque about it; in the model whose parameters we use,
+\begin{equation}
+F_x^{p}=\tfrac12\rho S_{\mathrm{prop}}C_{\mathrm{prop}}
+\bigl((k_{\mathrm{motor}}\delta_t)^2-V_a^2\bigr),\qquad
+\ell^{p}=-k_{T_P}\,(k_\Omega\delta_t)^2,
+\label{eq:fw-prop}
+\end{equation}
+with propeller area $S_{\mathrm{prop}}$, efficiency $C_{\mathrm{prop}}$ and motor
+constants $k_{\mathrm{motor}},k_{T_P},k_\Omega$. For the Aerosonde
+$k_{T_P}=k_\Omega=0$, so the reaction torque vanishes.
+
+\paragraph{Totals.} The body force and moment are
+\begin{equation}
+\vv{F}^{b}=\vv{F}_g^{b}+\bigl(F_x^{a}+F_x^{p},\,F_y^{a},\,F_z^{a}\bigr)\T,
+\qquad
+\vv{\tau}^{b}=\bigl(\ell^{a}+\ell^{p},\,m^{a},\,n^{a}\bigr)\T.
+\label{eq:fw-totals}
+\end{equation}
+
+\section{Rigid-body dynamics}
+
+The translational dynamics in the body frame include the transport (Coriolis)
+terms from writing Newton's law in a rotating frame:
+\begin{equation}
+\dot u=rv-qw+\tfrac1m F_x,\qquad
+\dot v=pw-ru+\tfrac1m F_y,\qquad
+\dot w=qu-pv+\tfrac1m F_z.
+\label{eq:fw-uvw}
+\end{equation}
+The rotational dynamics, for an airframe symmetric about the $x$--$z$ plane
+(so only the product of inertia $J_{xz}$ survives), are written with the inertia
+coupling constants
+\begin{gather}
+\Gamma=J_xJ_z-J_{xz}^2,\quad
+\Gamma_1=\tfrac{J_{xz}(J_x-J_y+J_z)}{\Gamma},\quad
+\Gamma_2=\tfrac{J_z(J_z-J_y)+J_{xz}^2}{\Gamma},\quad
+\Gamma_3=\tfrac{J_z}{\Gamma},\notag\\
+\Gamma_4=\tfrac{J_{xz}}{\Gamma},\quad
+\Gamma_5=\tfrac{J_z-J_x}{J_y},\quad
+\Gamma_6=\tfrac{J_{xz}}{J_y},\quad
+\Gamma_7=\tfrac{(J_x-J_y)J_x+J_{xz}^2}{\Gamma},\quad
+\Gamma_8=\tfrac{J_x}{\Gamma},
+\label{eq:gamma}
+\end{gather}
+so that
+\begin{align}
+\dot p&=\Gamma_1 pq-\Gamma_2 qr+\Gamma_3\ell+\Gamma_4 n,\label{eq:fw-p}\\
+\dot q&=\Gamma_5 pr-\Gamma_6(p^2-r^2)+\tfrac1{J_y}m,\label{eq:fw-q}\\
+\dot r&=\Gamma_7 pq-\Gamma_1 qr+\Gamma_4\ell+\Gamma_8 n.\label{eq:fw-r}
+\end{align}
+Equations~\eqref{eq:fw-kin}, \eqref{eq:fw-uvw} and
+\eqref{eq:fw-p}--\eqref{eq:fw-r} are the fixed-wing dynamics $\vv{f}_i$ of
+\cref{eq:agent-generic}; they are discretised by RK4 exactly as in
+\cref{sec:hexa-disc} and linearised for the per-agent solvers.
+
+\section{Trim and validation}
+
+A \emph{trim} is a constant-input flight condition. For straight-and-level flight
+at airspeed $V_a^{\star}$ we solve $\dot u=\dot w=\dot q=0$ for the angle of
+attack $\alpha$, elevator $\delta_e$ and throttle $\delta_t$ (with
+$\theta=\alpha$ for level flight), a three-equation root-find. For the Aerosonde
+at $V_a^{\star}=\SI{35}{\meter\per\second}$ the accompanying code returns
+\begin{equation}
+\alpha^{\star}=0.20^\circ,\qquad
+\delta_e^{\star}=-2.83^\circ,\qquad
+\delta_t^{\star}=0.464,
+\end{equation}
+with trim residual below $10^{-12}$, and integrating from this trim holds
+airspeed and altitude over the simulation horizon
+($|\Delta V_a|<\SI{0.5}{\meter\per\second}$, $|\Delta h|<\SI{2}{\meter}$ over
+\SI{5}{\second}). The blended lift coefficient \cref{eq:CL} has slope
+$C_{L_\alpha}$ near $\alpha=0$ and is continuous through stall, and the inertia
+coupling $\Gamma=J_xJ_z-J_{xz}^2>0$; all of these are checked numerically. The
+complete Aerosonde parameter set is given in \cref{tab:fw-params}
+(\cref{app:param}).

@@ -1,0 +1,67 @@
+\chapter{Hexacopter Jacobians}
+\label{app:jac}
+
+The per-agent solvers of \cref{ch:peragent} require the Jacobians of the
+continuous dynamics \cref{eq:hexa-full}, which are then propagated through the
+RK4 stages to the discrete sensitivities \cref{eq:hexa-disc}. With state ordering
+$\state=(\vv{p},\vv{v},\quat{q},\vv{\omega})$ and input $\ctrl=(T,\vv{\tau})$, the
+continuous Jacobian $\partial\vv{f}/\partial\state$ has the block structure
+\begin{equation}
+\frac{\partial\vv{f}}{\partial\state}=
+\begin{bmatrix}
+\mat{0} & \mat{I}_3 & \mat{0} & \mat{0}\\[2pt]
+\mat{0} & -\tfrac{c_D}{m}\mat{I}_3 & \dfrac{T}{m}\dfrac{\partial(\mat{R}(\quat{q})\vv{e}_3)}{\partial\quat{q}} & \mat{0}\\[8pt]
+\mat{0} & \mat{0} & \tfrac12\bm{\Omega}(\vv{\omega}) & \tfrac12\,\mat{\Xi}(\quat{q})\\[4pt]
+\mat{0} & \mat{0} & \mat{0} & \dfrac{\partial\dot{\vv{\omega}}}{\partial\vv{\omega}}
+\end{bmatrix},
+\end{equation}
+whose non-trivial blocks are as follows.
+
+\paragraph{Thrust-axis block.} The third column of $\mat{R}(\quat{q})$ is
+$\mat{R}(\quat{q})\vv{e}_3=2(q_xq_z+q_wq_y,\ q_yq_z-q_wq_x,\ \tfrac12-q_x^2-q_y^2)\T$,
+so
+\begin{equation}
+\frac{\partial(\mat{R}(\quat{q})\vv{e}_3)}{\partial\quat{q}}=2
+\begin{bmatrix}
+q_y & q_z & q_w & q_x\\
+-q_x & -q_w & q_z & q_y\\
+0 & -2q_x & -2q_y & 0
+\end{bmatrix},
+\end{equation}
+scaled by $T/m$ in the velocity row; this is the linearised attitude-to-%
+translation coupling the controller inverts through differential flatness.
+
+\paragraph{Quaternion-rate blocks.} From $\dot{\quat{q}}=\tfrac12\bm{\Omega}(\vv{\omega})\quat{q}
+=\tfrac12(0,\vv{\omega})\qmul^{L}\!\quat{q}$, the derivative with respect to
+$\quat{q}$ is $\tfrac12\bm{\Omega}(\vv{\omega})$ (\cref{eq:Omega}), and the
+derivative with respect to $\vv{\omega}$ is $\tfrac12\mat{\Xi}(\quat{q})$ with
+\begin{equation}
+\mat{\Xi}(\quat{q})=
+\begin{bmatrix}-q_x & -q_y & -q_z\\ q_w & -q_z & q_y\\ q_z & q_w & -q_x\\ -q_y & q_x & q_w\end{bmatrix}
+\in\R^{4\times3}.
+\end{equation}
+
+\paragraph{Angular-rate block.} From \cref{eq:hexa-wdot-comp},
+\begin{equation}
+\frac{\partial\dot{\vv{\omega}}}{\partial\vv{\omega}}=
+\begin{bmatrix}
+0 & \tfrac{J_{yy}-J_{zz}}{J_{xx}}\omega_z & \tfrac{J_{yy}-J_{zz}}{J_{xx}}\omega_y\\
+\tfrac{J_{zz}-J_{xx}}{J_{yy}}\omega_z & 0 & \tfrac{J_{zz}-J_{xx}}{J_{yy}}\omega_x\\
+\tfrac{J_{xx}-J_{yy}}{J_{zz}}\omega_y & \tfrac{J_{xx}-J_{yy}}{J_{zz}}\omega_x & 0
+\end{bmatrix}.
+\end{equation}
+
+\paragraph{Input Jacobian.} The dynamics are affine in the wrench, so
+\begin{equation}
+\frac{\partial\vv{f}}{\partial\ctrl}=
+\begin{bmatrix}
+\mat{0}_{3\times1} & \mat{0}_{3\times3}\\
+\tfrac1m\mat{R}(\quat{q})\vv{e}_3 & \mat{0}_{3\times3}\\
+\mat{0}_{4\times1} & \mat{0}_{4\times3}\\
+\mat{0}_{3\times1} & \mat{J}^{-1}
+\end{bmatrix},
+\end{equation}
+with the thrust column $\tfrac1m\mat{R}(\quat{q})\vv{e}_3$ and the torque block
+$\mat{J}^{-1}$. These closed-form Jacobians were cross-checked against central
+finite differences in the accompanying code (agreement to $\sim10^{-6}$, the
+finite-difference floor).

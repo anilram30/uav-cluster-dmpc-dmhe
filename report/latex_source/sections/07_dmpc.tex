@@ -1,0 +1,151 @@
+\chapter{Distributed Model-Predictive Control}
+\label{ch:dmpc}
+
+Each agent controls its motion with the model-predictive controller of
+\cref{sec:mpc}. This chapter couples those controllers into a \emph{distributed}
+controller (DMPC) that drives the cluster to a coordinated objective---a
+formation, a trajectory, a coverage pattern---while enforcing the safety-critical
+inter-agent constraints, using only neighbour-to-neighbour communication.
+
+\section{Cluster objective and coupling}
+
+Let each agent have a desired offset $\vv{d}_i$ from a common formation centre
+$\vv{c}(t)$, which may itself follow a mission trajectory. The cluster objective
+is the sum of the agents' tracking costs subject to their individual dynamics and
+constraints \emph{and} to the coupling constraints that make the group
+behave as one:
+\begin{subequations}
+\label{eq:dmpc}
+\begin{align}
+\min_{\{\ctrl_i\}}\ \ &\sum_{i\in\mathcal V}J_i(\state_i,\ctrl_i;\ \vv{c}(t)+\vv{d}_i)\\
+\text{s.t.}\ \ &\state_{i,k+1}=\vv{f}_{d,i}(\state_{i,k},\ctrl_{i,k}),\quad
+\vv{c}_i(\state_{i,k},\ctrl_{i,k})\le\vv{0}, && \forall i,k,\\
+&\norm{\vv{p}_i-\vv{p}_j}\ge D, && \forall (i,j),\ i\ne j,
+\label{eq:collision}
+\end{align}
+\end{subequations}
+where $J_i$ is agent $i$'s MPC cost with reference slot $\vv{c}(t)+\vv{d}_i$, and
+\cref{eq:collision} is the pairwise minimum-separation (collision-avoidance)
+constraint with safety radius $D$. Two features make \cref{eq:dmpc} a genuinely
+distributed problem: the reference $\vv{c}(t)$ must be agreed upon without a
+central node, and the coupling constraint \cref{eq:collision} links pairs of
+agents that must nonetheless decide their inputs locally.
+
+\section{Consensus on the formation reference}
+
+The agents agree on the formation centre by consensus. Each agent holds a local
+estimate $\vv{c}_i$ of the centre (from its share of the mission command or its
+own sensing) and runs, at each control step, a few rounds of the Metropolis-%
+weighted iteration of \cref{eq:metropolis},
+\begin{equation}
+\vv{c}_i\leftarrow W_{ii}\vv{c}_i+\sum_{j\in\Neigh_i}W_{ij}\vv{c}_j,
+\label{eq:centre-consensus}
+\end{equation}
+which converges to a common centre for any connected graph
+(\cref{sec:graph}). Its rate is set by the algebraic connectivity
+$\lambda_2(\Lap)$; a well-connected cluster agrees in a handful of rounds, well
+within one control period. Agent $i$ then sets its MPC reference slot to
+$\vv{c}_i+\vv{d}_i$ and calls \texttt{mpc\_set\_reference}
+(\cref{sec:capi}). The desired offsets $\vv{d}_i$ define the formation
+\emph{shape}; changing them---on command or in response to a fault---reconfigures
+the formation (\cref{ch:formation}).
+
+\section{Coupling constraints by decomposition}
+
+The collision-avoidance coupling \cref{eq:collision} links neighbouring agents'
+decision variables. There are two established routes to solving the coupled
+problem \cref{eq:dmpc} with only local computation and neighbour messages, and
+the framework supports both.
+
+\paragraph{Dual decomposition / ADMM.} Introduce a copy of each shared quantity
+and a consistency constraint tying an agent's copy to its neighbours'; the
+augmented Lagrangian of \cref{eq:dmpc} then \emph{separates} across agents given
+the dual variables, and the alternating-direction method of multipliers (ADMM)
+alternates a local solve---one call to each agent's MPC---with a neighbour
+exchange and a dual update \cite{boyd2011admm,summers2012distributed}. Each ADMM
+iteration is one local MPC solve plus one round of communication, so a fixed
+(small) number of iterations per control step keeps the scheme real-time; the
+per-agent solve is exactly the RTI step of \cref{sec:mpc}, warm-started from the
+previous iterate. Accelerated dual-decomposition variants
+\cite{giselsson2013accelerated} reduce the iteration count. This is the
+\emph{distributed-optimisation} route: at convergence it solves the centralised
+problem, and terminated early it yields a feasible, if suboptimal, coordinated
+input.
+
+\paragraph{Cooperative DMPC and its guarantees.} When the agents optimise the
+\emph{plant-wide} objective rather than only their own, the cooperative-DMPC
+theory of Stewart \etal \cite{stewart2010cooperative} applies: the systemwide
+cost is a common Lyapunov function, so the closed loop is stable and recursively
+feasible \emph{at every intermediate iterate}, including a single iteration per
+sample, provided each agent warm-starts from the previous feasible plan. This
+``any-iterate'' property is exactly what a real-time cluster needs, and the
+distributed synthesis of terminal ingredients of Conte \etal
+\cite{conte2016distributed} certifies stability with only neighbour-to-neighbour
+coupling. We state these as the guarantees the architecture inherits; the review
+of \cite{christofides2013distributed} and the text of \cite{rawlings2017model}
+develop the cooperative and non-cooperative variants and their proofs.
+
+\section{Real-time safety filter}
+\label{sec:cbf}
+
+For hard, instantaneous collision avoidance the framework layers a
+control-barrier-function (CBF) \emph{safety filter} between the MPC command and
+the actuator, which minimally alters the commanded acceleration to keep the pair
+separation constraint invariant \cite{ames2017control,wang2017safety}. Define the
+pairwise barrier
+\begin{equation}
+h_{ij}(\vv{p})=\norm{\vv{p}_i-\vv{p}_j}^2-D^2\ \ge0,
+\label{eq:cbf-h}
+\end{equation}
+whose safe set is exactly \cref{eq:collision}. Because \cref{eq:cbf-h} has
+relative degree two with respect to the commanded acceleration (a double
+integrator in position), we use the higher-order CBF condition
+\begin{equation}
+\ddot h_{ij}+k_1\dot h_{ij}+k_2 h_{ij}\ge0,
+\label{eq:hocbf}
+\end{equation}
+with $k_1,k_2>0$ chosen so the associated characteristic polynomial is Hurwitz.
+Writing $\Delta\vv{p}=\vv{p}_i-\vv{p}_j$, $\Delta\vv{v}=\vv{v}_i-\vv{v}_j$ and
+conservatively treating the neighbour's acceleration as zero over the step (the
+standard decentralised assumption, since each agent actuates only its own input),
+$\ddot h_{ij}=2\,\Delta\vv{v}\T\Delta\vv{v}+2\,\Delta\vv{p}\T\vv{a}_i$ and
+\cref{eq:hocbf} becomes the \emph{linear} inequality in agent $i$'s acceleration
+$\vv{a}_i$
+\begin{equation}
+-2\,\Delta\vv{p}\T\vv{a}_i\ \le\ 2\,\Delta\vv{v}\T\Delta\vv{v}+k_1\dot h_{ij}+k_2 h_{ij}.
+\label{eq:cbf-row}
+\end{equation}
+(If the neighbour's acceleration $\vv{a}_j$ is communicated, the exact row carries
+the additional term $-2\,\Delta\vv{p}\T\vv{a}_j$ on the right-hand side; treating
+$\vv{a}_j=\vv{0}$ is conservative and needs no communication.)
+The safe acceleration is the solution of the small quadratic program that stays
+closest to the MPC command $\vv{a}_i^{\text{cmd}}$ subject to one row
+\cref{eq:cbf-row} per neighbour,
+\begin{equation}
+\vv{a}_i^{\text{safe}}=\arg\min_{\vv{a}_i}\ \norm{\vv{a}_i-\vv{a}_i^{\text{cmd}}}^2
+\quad\text{s.t. \cref{eq:cbf-row}}\ \forall j\in\Neigh_i,
+\label{eq:cbf-qp}
+\end{equation}
+a problem of the agent's control dimension that is solved in microseconds by the
+same constraint machinery as the core solver. The filter is inactive when the
+MPC command is already safe and engages only near the safety boundary, giving a
+provably forward-invariant safe set under the standard CBF assumptions
+\cite{ames2017control}. The collision-avoidance rows may equivalently be written
+directly into the MPC constraint $\vv{c}_i$ of \cref{eq:ocp}; the safety filter is
+the lightweight, always-feasible last line of defence that the simulation study
+uses.
+
+\begin{algorithm}[t]
+\caption{Distributed MPC step at agent $i$}
+\label{alg:dmpc}
+\DontPrintSemicolon
+\KwIn{state estimate $\est{\state}_i$ (from \cref{alg:dmhe}); local centre
+estimate $\vv{c}_i$; neighbour states/centres}
+consensus rounds on the centre: \cref{eq:centre-consensus}\;
+set reference slot $\vv{c}_i+\vv{d}_i$; \texttt{mpc\_prepare} (matrix pass)\;
+$\vv{a}_i^{\text{cmd}}\leftarrow$ \texttt{mpc\_feedback}$(\est{\state}_i)$\hfill// RTI, \cref{eq:rti-feedback}\;
+$\vv{a}_i^{\text{safe}}\leftarrow$ CBF-QP \cref{eq:cbf-qp} over $\Neigh_i$\;
+differential flatness \cref{eq:flat1}--\eqref{eq:flat2} + inner attitude loop
+$\rightarrow$ actuators\;
+broadcast $(\vv{p}_i,\vv{v}_i)$ to $\Neigh_i$
+\end{algorithm}

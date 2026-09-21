@@ -1,0 +1,79 @@
+\chapter*{Nomenclature}
+\addcontentsline{toc}{chapter}{Nomenclature}
+
+The following conventions hold throughout unless stated otherwise. Scalars are
+italic ($m$, $T$), vectors bold lower case ($\vv{p}$, $\vv{\omega}$), matrices
+bold upper case ($\mat{R}$, $\mat{J}$), and quaternions bold ($\quat{q}$). A
+superscript on a vector denotes the frame in which it is resolved, \eg
+$\vv{v}^{b}$ is $\vv{v}$ expressed in the body frame. All symbols are
+additionally defined at first use.
+
+\vspace{2mm}
+\noindent\textbf{Frames and operators}
+{\small
+\begin{longtable}{@{}p{0.20\linewidth}p{0.74\linewidth}@{}}
+\toprule
+$\Frame{i},\Frame{b},\Frame{s},\Frame{w}$ & inertial (world), body, stability and wind frames \\
+$\mat{R}\in\SO(3)$ & rotation matrix; $\mat{R}_{b}^{i}$ maps body to inertial \\
+$\SO(3),\so(3)$ & special orthogonal group and its Lie algebra (skew matrices) \\
+$\skewm{\vv{a}}$ & skew-symmetric matrix with $\skewm{\vv{a}}\vv{b}=\vv{a}\times\vv{b}$ \\
+$\quat{q}=(q_w,\vv{q}_v)$ & unit quaternion, scalar-first, Hamilton convention \\
+$\qmul$ & Hamilton quaternion product \\
+$\conj{\quat{q}}$ & quaternion conjugate; $(\cdot)\T$ transpose; $\norm{\cdot}$ Euclidean norm \\
+$\Exp,\Log$ & exponential / logarithm maps on $\SO(3)$ and $\Sph^3$ \\
+\bottomrule
+\end{longtable}}
+
+\noindent\textbf{Rigid-body state (both vehicle classes)}
+{\small
+\begin{longtable}{@{}p{0.20\linewidth}p{0.74\linewidth}@{}}
+\toprule
+$\vv{p}=(p_n,p_e,p_d)$ & inertial position (\si{\meter}); NED for fixed-wing, ENU-up for multirotor \\
+$\vv{v}$ & inertial (multirotor) or body-frame (fixed-wing) velocity (\si{\meter\per\second}) \\
+$\vv{\omega}=(p,q,r)$ & body angular velocity (\si{\radian\per\second}) \\
+$m,\ \mat{J}$ & mass (\si{\kilogram}), inertia tensor (\si{\kilogram\meter\squared}) \\
+$g$ & gravitational acceleration, \SI{9.81}{\meter\per\second\squared} \\
+$\phi,\theta,\psi$ & roll, pitch, yaw Euler angles (3--2--1) \\
+\bottomrule
+\end{longtable}}
+
+\noindent\textbf{Hexacopter-specific}
+{\small
+\begin{longtable}{@{}p{0.20\linewidth}p{0.74\linewidth}@{}}
+\toprule
+$T,\vv{\tau}$ & collective thrust (\si{\newton}) and body torque (\si{\newton\meter}) \\
+$\Omega_i,f_i$ & speed and thrust of rotor $i$; $f_i=k_f\Omega_i^2$ \\
+$k_f,k_m$ & rotor thrust and drag-torque coefficients \\
+$L,\beta_i,\sigma_i$ & arm length, rotor azimuth, spin direction $\pm1$ \\
+$\mat{M}$ & $4\times6$ control-allocation (mixer) matrix \\
+\bottomrule
+\end{longtable}}
+
+\noindent\textbf{Fixed-wing-specific}
+{\small
+\begin{longtable}{@{}p{0.20\linewidth}p{0.74\linewidth}@{}}
+\toprule
+$V_a,\alpha,\beta$ & airspeed (\si{\meter\per\second}), angle of attack, sideslip (\si{\radian}) \\
+$\rho,S,b,c$ & air density, wing area, span, mean chord \\
+$C_L,C_D,C_m$ & lift, drag, pitch-moment coefficients \\
+$C_Y,C_\ell,C_n$ & side-force, roll- and yaw-moment coefficients \\
+$\delta_e,\delta_a,\delta_r,\delta_t$ & elevator, aileron, rudder, throttle \\
+$\Gamma,\Gamma_1..\Gamma_8$ & inertia coupling constants \\
+\bottomrule
+\end{longtable}}
+
+\noindent\textbf{Estimation, control and coordination}
+{\small
+\begin{longtable}{@{}p{0.20\linewidth}p{0.74\linewidth}@{}}
+\toprule
+$N,\ M$ & MPC prediction horizon, MHE estimation window \\
+$\ell_k,\ell_N$ & MPC stage and terminal cost \\
+$c(\cdot)\le0,\ c_N(\cdot)\le0$ & stage and terminal inequality constraints \\
+$\vv{\lambda},\vv{\mu}$ & equality (co-state) and inequality multipliers \\
+$\vv{w}$ & estimated disturbance input (MHE); $\Lambda_a,\vv{x}_a$ arrival information/mean \\
+$\Graph=(\mathcal V,\mathcal E)$ & communication graph; $\Neigh_i$ neighbours of $i$ \\
+$\Lap,\ \lambda_2(\Lap)$ & graph Laplacian and algebraic connectivity \\
+$h(\cdot),\ \alpha(\cdot)$ & control-barrier function and extended class-$\mathcal K$ function \\
+$\vv{d}_i$ & desired formation offset of agent $i$ \\
+\bottomrule
+\end{longtable}}

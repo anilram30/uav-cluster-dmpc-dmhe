@@ -1,0 +1,163 @@
+\chapter{Distributed Moving-Horizon Estimation}
+\label{ch:dmhe}
+
+Each agent estimates its own state with the moving-horizon estimator of
+\cref{sec:mhe}. This chapter couples those local estimators into a
+\emph{distributed} estimator (DMHE) in which agents exchange information over the
+communication graph so that the cluster localises better than any agent could
+alone---and, in particular, so that an agent whose absolute-positioning
+measurements are lost stays localised by leaning on its neighbours.
+
+\section{Cluster measurement model}
+
+Agent $i$ has access to two kinds of measurement. \emph{Absolute} measurements
+relate its state to the inertial frame; the canonical example is a GNSS position
+fix,
+\begin{equation}
+\vv{y}_i^{\text{abs}}=\vv{p}_i+\vv{n}_i^{\text{abs}},\qquad
+\vv{n}_i^{\text{abs}}\sim\mathcal N(\vv{0},\mat{R}_{\text{abs}}),
+\label{eq:abs-meas}
+\end{equation}
+optionally with an onboard inertial measurement (accelerometer/gyro) providing
+the specific force used as a known input to the estimator's process model.
+\emph{Relative} measurements relate the states of neighbouring agents; from
+onboard relative sensing (vision, ultra-wideband ranging, radar) agent $i$
+measures the relative position of each neighbour $j\in\Neigh_i$,
+\begin{equation}
+\vv{y}_{ij}^{\text{rel}}=\vv{p}_i-\vv{p}_j+\vv{n}_{ij}^{\text{rel}},\qquad
+\vv{n}_{ij}^{\text{rel}}\sim\mathcal N(\vv{0},\mat{R}_{\text{rel}}).
+\label{eq:rel-meas}
+\end{equation}
+The relative measurements are the coupling: they carry no absolute information by
+themselves, but combined with a neighbour's absolute estimate they localise
+agent $i$ without its own absolute fix.
+
+\section{Local estimator and the translational reduction}
+
+For the translational sub-problem---position and velocity driven by a measured
+specific force with process noise---the model is linear, and by the
+Kalman-filter reduction of \cref{sec:mhe} the local estimator is exactly an
+information/covariance Kalman recursion. Writing the local state
+$\vv{s}_i=(\vv{p}_i,\vv{v}_i)$ with the constant-acceleration kinematic model
+\begin{equation}
+\vv{s}_i^{+}=\mat{F}\vv{s}_i+\mat{G}\,\vv{a}_i^{\text{meas}}+\vv{q}_i,
+\qquad
+\mat{F}=\begin{bmatrix}\mat{I}&\Delta t\,\mat{I}\\\mat{0}&\mat{I}\end{bmatrix},
+\quad
+\mat{G}=\begin{bmatrix}\tfrac12\Delta t^2\mat{I}\\\Delta t\,\mat{I}\end{bmatrix},
+\label{eq:dmhe-kin}
+\end{equation}
+the local update is the standard predict/correct pair with process covariance
+$\mat{Q}_i$ and, when an absolute fix is available, the innovation update against
+\cref{eq:abs-meas}. This recursion is numerically well conditioned from the first
+sample---unlike a cold-started batch window---which is why we use it as the
+per-agent engine; the full nonlinear estimator of \cref{sec:mhe} is the general
+form of which this is the linear reduction.
+
+\section{Relative fusion and the data-incest problem}
+\label{sec:dmhe-fusion}
+
+The distributed step fuses each relative measurement \cref{eq:rel-meas} as a
+pseudo-measurement of $\vv{p}_i$ anchored on the neighbour's estimate: since
+$\vv{p}_i=\vv{y}_{ij}^{\text{rel}}+\vv{p}_j$, the neighbour's estimate
+$\est{\vv{p}}_j$ (with position covariance $\mat{P}_j$) supplies
+\begin{equation}
+\vv{z}_{ij}=\vv{y}_{ij}^{\text{rel}}+\est{\vv{p}}_j,\qquad
+\text{covariance }\ \mat{R}_{\text{rel}}+\mat{P}_j,
+\label{eq:pseudo-meas}
+\end{equation}
+which is folded into the local filter by an ordinary Kalman update. Inflating the
+measurement covariance by the neighbour's own uncertainty $\mat{P}_j$ is what
+makes the fusion \emph{covariance-aware}: a confident (well-localised) neighbour
+is trusted, an uncertain one is discounted.
+
+Naively fusing \cref{eq:pseudo-meas} for \emph{all} neighbours at every step
+fails, for two reasons that the design must respect and that we observed directly
+in simulation. First, \emph{data incest}: if two agents that are both uncertain
+fuse each other's estimates, they reinforce a shared error and drift together---%
+the classical rumour-propagation pathology of distributed estimation. Second,
+\emph{time misalignment}: anchoring a window's past node to a neighbour's current
+estimate injects an error that grows with the cluster's speed. We therefore adopt
+a conservative, provably safe fusion policy:
+\begin{enumerate}[nosep,leftmargin=1.6em]
+  \item an agent uses relative fusion only \emph{when its own absolute fix is
+        unavailable} (it otherwise behaves as an independent local filter,
+        identical to the baseline);
+  \item it anchors only to neighbours of \emph{strictly lower anchor level}.
+        Define level~$0$ agents as those holding a current absolute fix; a
+        denied agent with at least one anchored neighbour of level below $\ell$
+        becomes anchored at level~$\ell$, fusing \cref{eq:pseudo-meas} against
+        those neighbours' already-updated, same-step estimates with their
+        (chain-inflated) covariances $\mat{P}_j$. The strict level ordering
+        makes the information flow a directed acyclic graph, so estimates can
+        never reinforce one another mutually---which is precisely what rules
+        out incest. Capping the maximum level at $L{=}1$ recovers the
+        conservative \emph{one-hop} policy (anchor only to absolutely-fixed
+        neighbours); $L\ge2$ is \emph{multi-hop} anchoring, in which a denied
+        agent with no absolutely-fixed neighbour still localises through a
+        chain of anchored ones, at covariance appropriately grown along the
+        chain; and
+  \item the fusion is time-aligned---level-$\ell$ agents fuse in the
+        $\ell$-th pass of a step, after all lower levels have completed, so
+        every anchor is a fresh same-step estimate.
+\end{enumerate}
+The level assignment is purely topological (it depends only on which agents
+hold a fix and on the graph, not on the estimates), so it is computed
+identically by every implementation of the filter, and the fused
+pseudo-measurement enters the local estimator through its ordinary measurement
+channel---no solver modification is required. The condition for an agent to be
+anchored at all is that the graph connect it to some absolutely-fixed agent
+through a path of denied agents of length at most $L$; \cref{ch:simulation}
+shows both the failure of the one-hop policy when that condition is violated at
+$L{=}1$ and its recovery at $L{=}3$. This policy is a pragmatic instance of the
+partition-based DMHE of Farina \etal
+\cite{farina2010distributed,farina2012distributed}: neighbour states enter as
+bounded, information-weighted pseudo-measurements, with the DAG ordering as the
+incest guard. When richer coupling is warranted---all agents simultaneously
+denied, or overlapping shared states---the arrival-cost consensus of
+Battistelli \cite{battistelli2019distributed}, which fuses the local
+information matrices $\Omega_i\leftarrow\sum_{j}W_{ij}\Omega_j$ over the graph
+with the Metropolis weights of \cref{eq:metropolis}, is the general form of
+which the leveled scheme is a structured special case; it restores
+centralised-like stability at the price of a consensus loop per sample and is
+compatible with the same interface.
+
+\begin{algorithm}[t]
+\caption{Distributed MHE step at agent $i$ (translational reduction; the
+one-hop $L{=}1$ instance---multi-hop anchoring repeats the fusion pass once per
+level with anchors of strictly lower level)}
+\label{alg:dmhe}
+\DontPrintSemicolon
+\KwIn{measured specific force $\vv{a}_i^{\text{meas}}$; absolute fix
+$\vv{y}_i^{\text{abs}}$ if available; relative measurements
+$\{\vv{y}_{ij}^{\text{rel}}\}_{j\in\Neigh_i}$; neighbour estimates
+$\{(\est{\vv{s}}_j,\mat{P}_j)\}$}
+\textbf{Predict:}\ \ $\est{\vv{s}}_i\!\leftarrow\!\mat{F}\est{\vv{s}}_i+\mat{G}\vv{a}_i^{\text{meas}}$,\ \
+$\mat{P}_i\!\leftarrow\!\mat{F}\mat{P}_i\mat{F}\T+\mat{Q}_i$\;
+\eIf{absolute fix available}{
+  \textbf{Absolute update} against \cref{eq:abs-meas}\ \ (local filter; no relative fusion)\;
+}{
+  \ForEach{$j\in\Neigh_i$ \textbf{with} a current absolute fix}{
+     $\vv{z}_{ij}\leftarrow\vv{y}_{ij}^{\text{rel}}+\est{\vv{p}}_j$;\ \
+     Kalman update of $\est{\vv{s}}_i$ with covariance $\mat{R}_{\text{rel}}+\mat{P}_j$\;
+  }
+}
+broadcast $(\est{\vv{s}}_i,\mat{P}_i)$ to $\Neigh_i$\;
+\Return $\est{\vv{s}}_i$ to the controller
+\end{algorithm}
+
+\section{Stability and what is claimed}
+
+The local estimator inherits the stability of the underlying moving-horizon
+estimator (\cref{sec:mhe}); for the linear reduction it is the Kalman filter,
+uniformly stable under standard detectability. The relative-fusion policy of
+\cref{sec:dmhe-fusion} is a sequence of information-increasing Kalman updates
+against uncorrelated anchors, so it cannot decrease certainty spuriously, and the
+denied agent's error is bounded by the anchors' error plus the relative-%
+measurement noise rather than growing without bound as in dead reckoning. The
+partition-based convergence results of \cite{farina2010distributed} and the
+consensus-stability results of \cite{battistelli2019distributed,schneider2017convergence}
+provide the formal guarantees for the full nonlinear and all-denied cases; here
+we claim, and demonstrate in \cref{ch:simulation}, that the policy keeps
+absolute-denied agents localised to the anchor-plus-noise level through outages
+that send an independent filter into unbounded drift.

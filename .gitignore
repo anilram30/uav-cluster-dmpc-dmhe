@@ -1,0 +1,9 @@
+__pycache__/
+*.pyc
+*.o
+*.so
+cpp/cluster_demo
+python/results_hexa.npz
+python/results_fw.npz
+python/*.log
+.DS_Store

@@ -1,0 +1,474 @@
+\chapter{Simulation Study}
+\label{ch:simulation}
+
+This chapter exercises the framework in closed loop on the full nonlinear plants
+of \cref{ch:hexacopter,ch:fixedwing}. It reports five studies: a representative
+six-hexacopter mission; a Monte-Carlo robustness campaign over noise
+realisations, GNSS-denial severity, degraded communication graphs and an
+estimator ablation, including the multi-hop anchoring extension of
+\cref{sec:dmhe-fusion}; a computational study of the embedded per-agent solvers
+instantiated on the drone models; a closed-loop validation with those embedded
+solvers \emph{in} the loop; and a four-aircraft fixed-wing formation.
+Every number is produced by the accompanying code; the controllers and
+estimators see only noisy measurements.
+
+\section{Hexacopter cluster: representative mission}
+\label{sec:sim-hexa}
+
+\paragraph{Setup.} Six hexacopters (parameters in \cref{tab:hexa-params}) start
+scattered on the ground and are commanded through four mission phases: vertical
+take-off, assembly into a ring formation of radius \SI{3}{\meter}, a sinusoidal
+translation of the formation centre, and a mid-mission reconfiguration in which
+the ring contracts and rotates. The communication graph is a ring augmented with
+second-neighbour chords (degree four, algebraic connectivity
+$\lambda_2(\Lap)=4.0$). Each agent runs the full stack of
+\cref{alg:dmhe,alg:dmpc}: distributed estimation from noisy GNSS
+($\sigma=\SI{0.3}{\meter}$), inertial measurement and relative measurements
+($\sigma=\SI{0.1}{\meter}$); a consensus on the formation centre; a
+model-predictive position command realised through differential flatness and a
+geometric inner attitude loop on the $13$-state quaternion plant; and the CBF
+safety filter of \cref{sec:cbf} with safety radius $D=\SI{1.4}{\meter}$. To test
+the DMHE, agents $3,4,5$ suffer a complete GNSS blackout during $t\in[12,22]\,$s
+and must localise by relative fusion to their still-tracked neighbours.
+
+\paragraph{Formation and safety.} \Cref{fig:hexa-traj} shows the closed-loop
+trajectories of a representative run: the cluster takes off, assembles the ring,
+follows the swept centre and contracts into the reconfigured formation.
+\Cref{fig:hexa-formation} quantifies the behaviour. The formation-\emph{shape}
+error (deviation from the ring geometry about the achieved centroid) settles
+near \SI{0.09}{\meter}; the total formation error, which also carries the
+uniform tracking lag of the moving centre, oscillates with the sweep and stays
+below \SI{4}{\meter}. The minimum pairwise separation remains above the
+\SI{1.4}{\meter} safety radius for the entire mission, including the
+contraction, confirming that the safety filter keeps the transient
+collision-free.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.82\linewidth]{figs/fig_hexa_traj3d.pdf}
+\caption{Closed-loop trajectories of the six-hexacopter cluster on the full
+nonlinear quaternion plants (circles: start; triangles: end). The mission
+comprises take-off, ring assembly, a swept translation and a contract-and-rotate
+reconfiguration.}
+\label{fig:hexa-traj}
+\end{figure}
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.86\linewidth]{figs/fig_hexa_formation.pdf}
+\caption{Formation tracking error (top) and minimum inter-agent separation
+(bottom) for the representative run. The separation stays above the safety
+radius $D=\SI{1.4}{\meter}$ throughout; the shaded band marks the GNSS blackout
+of agents $3,4,5$.}
+\label{fig:hexa-formation}
+\end{figure}
+
+\paragraph{Distributed estimation through the blackout.} \Cref{fig:hexa-dmhe}
+shows the estimation result. During the ten-second blackout the local
+filter---which can only dead-reckon on inertial measurements once its GNSS fix
+is lost---drifts steadily past \SI{1.2}{\meter}, while the distributed
+estimator, fusing relative measurements to the three neighbours that retain
+GNSS, holds the denied agents' position error essentially flat at the
+relative-measurement noise level. The accurate estimate is what keeps the
+control loop stable and the formation intact through the outage; the closed-loop
+consequence of \emph{not} having it is quantified by the ablation in
+\cref{sec:sim-mc}. \Cref{fig:hexa-timing} shows the per-step wall time of the
+reference-layer estimation and coordination for the whole six-agent cluster on
+one core (median \SI{\sim0.35}{\milli\second}); the embedded per-agent solves
+are measured separately in \cref{sec:sim-compute}.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.82\linewidth]{figs/fig_hexa_dmhe.pdf}
+\caption{Position RMSE of the GNSS-denied agents (representative run). Outside
+the blackout the distributed estimator and the local filter coincide; inside it
+(shaded) the local filter dead-reckons and drifts, while the DMHE holds the
+error at the relative-measurement noise level by anchoring to GNSS-tracked
+neighbours.}
+\label{fig:hexa-dmhe}
+\end{figure}
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.74\linewidth]{figs/fig_hexa_timing.pdf}
+\caption{Per-control-step wall time of the reference-layer distributed
+estimation and coordination for the full six-agent cluster on one core.}
+\label{fig:hexa-timing}
+\end{figure}
+
+\section{Monte-Carlo robustness study}
+\label{sec:sim-mc}
+
+A single trajectory establishes feasibility, not robustness. The full mission of
+\cref{sec:sim-hexa} was therefore repeated in a $126$-run Monte-Carlo campaign:
+$30$ independent noise realisations of the nominal scenario, a GNSS-denial
+severity sweep ($12$ seeds for each contiguous denied set of size $1$--$5$ of
+$6$), two communication-graph perturbations ($12$ seeds each), and a closed-loop
+estimator ablation ($12$ seeds). Every run regenerates all measurement noise,
+initial scatter and reference-sensing noise. \Cref{tab:mc} summarises the
+campaign; across all $126$ runs there were \emph{no} divergences and \emph{no}
+solver failures.
+
+\begin{table}[t]
+\centering
+\caption{Monte-Carlo robustness campaign ($150$ runs; $10$-s GNSS blackout in
+all scenarios). RMSE columns are the denied agents' position RMSE during the
+blackout. ``Shape'' is the formation-shape error about the achieved centroid
+over the assembled phase. ``Margin breach'' is time with minimum separation
+below the $D=\SI{1.4}{\meter}$ design radius, per run (physical contact never
+occurred; the smallest separation observed anywhere was \SI{0.75}{\meter}).}
+\label{tab:mc}
+\small
+\begin{tabular}{@{}lccccccc@{}}
+\toprule
+& & \multicolumn{2}{c}{DMHE RMSE [m]} & Local filter & Shape & Min sep. & Margin\\
+\cmidrule(lr){3-4}
+Scenario & $n$ & mean\,/\,med & p95 & mean [m] & [m] & [m] & breach [s]\\
+\midrule
+Nominal ($3/6$ denied) & 30 & 0.091\,/\,0.091 & 0.099 & 0.96 & 0.094 & $\ge$1.55 & 0\\
+Denied $1/6$ & 12 & 0.068\,/\,0.068 & 0.074 & 0.97 & 0.101 & $\ge$1.49 & 0\\
+Denied $2/6$ & 12 & 0.078\,/\,0.078 & 0.085 & 0.90 & 0.094 & $\ge$1.54 & 0\\
+Denied $4/6$ & 12 & 0.106\,/\,0.105 & 0.117 & 0.91 & 0.090 & $\ge$1.54 & 0\\
+Denied $5/6$$^{\dagger}$ & 12 & 0.451\,/\,0.365 & 0.689 & 0.96 & 0.267 & $\ge$0.90 & 0.50\\
+Ring graph$^{\dagger}$ ($\lambda_2{=}1$) & 12 & 0.506\,/\,0.474 & 0.799 & 0.95 & 0.244 & $\ge$0.98 & 0.20\\
+Denied $5/6$, multi-hop$^{\S}$ & 12 & 0.119\,/\,0.120 & 0.126 & 0.98 & 0.069 & $\ge$1.49 & 0\\
+Ring graph, multi-hop$^{\S}$ & 12 & 0.111\,/\,0.112 & 0.119 & 0.94 & 0.100 & $\ge$1.49 & 0\\
+Edge loss $(3,2)$ in blackout & 12 & 0.094\,/\,0.092 & 0.107 & 0.89 & 0.095 & $\ge$1.50 & 0\\
+Controller on local filter$^{\ddagger}$ & 12 & 0.089\,/\,0.087 & 0.099 & 0.91 & 0.449 & $\ge$0.75 & 0.80\\
+\midrule
+\multicolumn{8}{@{}l}{\footnotesize Divergences: $0/150$.\quad Safety-QP failures: $0$.\quad
+Reference-layer compute: median \SI{0.35}{\milli\second}\,/\,step (6 agents).}\\
+\multicolumn{8}{@{}p{0.94\linewidth}@{}}{\footnotesize
+$^{\dagger}$Anchor-coverage violated: at $5/6$ denied, agent $3$'s neighbours
+are all denied; on the plain ring, denied agent $4$'s neighbours are both
+denied. The affected agent must dead-reckon (\cref{sec:sim-mc-graph}).\quad
+$^{\S}$Same scenarios with the leveled multi-hop anchoring of
+\cref{sec:dmhe-fusion} ($L{=}3$): coverage is restored and the margin breaches
+vanish.\quad
+$^{\ddagger}$Ablation: the DMHE still runs (its passive RMSE is the first
+column) but the controller is fed the dead-reckoning local filter.}\\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\paragraph{Noise robustness.} Over the $30$ nominal seeds the blackout
+performance is remarkably tight: denied-agent DMHE RMSE of
+$0.091$\,/\,$0.091$\,/\,$0.099$\,m (mean\,/\,median\,/\,95th percentile)
+against $0.96$\,m for dead reckoning, formation-shape error
+\SI{0.094}{\meter}, and a worst-case-over-all-seeds minimum separation of
+\SI{1.55}{\meter}---the safety margin was never touched. The single
+representative run of \cref{sec:sim-hexa} is thus typical, not favourable.
+
+\paragraph{GNSS-denial severity.} \Cref{fig:denial-sweep} sweeps the denied set
+from one to five of six agents. The DMHE error grows only mildly with severity
+($0.068\to0.106$\,m through $4/6$ denied---more denied agents means fewer
+anchors shared among more consumers) while dead reckoning sits an order of
+magnitude higher throughout. At $5/6$ denied the one-hop curve breaks upward, for a
+structural reason the campaign makes precise: denied agent $3$ then has no
+GNSS-good agent within one hop, the one-hop fusion policy correctly refuses to
+anchor it to other drifting agents, and it reverts to dead reckoning.
+Resilience is thus governed not by the denial count as such but by
+\emph{anchor coverage}. The leveled multi-hop anchoring of
+\cref{sec:dmhe-fusion} repairs exactly this case: agent $3$ anchors, at level
+two, to neighbours that are themselves level-one anchored to the single
+remaining GNSS-good agent, and over $12$ seeds the denied-agent RMSE returns to
+$0.119$\,m mean\,/\,$0.126$\,m p95 (third curve of \cref{fig:denial-sweep})
+with the separation margin fully restored ($\ge$\SI{1.49}{\meter}, zero
+breaches). Through $4/6$ denial the multi-hop and one-hop policies coincide by
+construction, so the extension costs nothing when coverage already holds.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.8\linewidth]{figs/fig_denial_sweep.pdf}
+\caption{GNSS-denial severity sweep ($12$ Monte-Carlo seeds per point; bands are
+min--max). One-hop DMHE degrades gracefully while anchor coverage holds and
+breaks upward exactly when it fails (annotated); the leveled multi-hop
+anchoring of \cref{sec:dmhe-fusion} restores coverage and keeps the error at
+the decimetre level through $5/6$ denial; the dead-reckoning baseline is an
+order of magnitude worse throughout.}
+\label{fig:denial-sweep}
+\end{figure}
+
+\paragraph{Communication-graph robustness.}
+\label{sec:sim-mc-graph}
+Two graph perturbations probe the same condition from the topology side. Losing
+the single edge $(3,2)$ for four seconds in the middle of the blackout is
+absorbed almost without trace ($0.091\to0.094$\,m mean RMSE): agent $3$'s second
+anchor covers the lost one, and the safety margin is untouched. Replacing the
+chorded graph by the plain ring ($\lambda_2$ drops from $4$ to $1$) is not:
+denied agent $4$'s ring neighbours are themselves both denied, anchor coverage
+fails, its estimate drifts, and the eroded estimate quality lets the true
+separation dip below the design margin for $\sim$\SI{0.2}{\second} per run
+(minimum \SI{0.98}{\meter}; no contact). The two experiments bracket the design
+rule: under one-hop fusion the graph must be provisioned so that plausible
+denial sets keep every agent within one hop of an anchor---degree, not only
+algebraic connectivity, carries the estimation-side robustness. Multi-hop
+anchoring relaxes the rule to reachability: on the same ring, denied agent $4$
+anchors at level two through its level-one neighbours, and over $12$ seeds the
+ring scenario recovers to $0.111$\,m mean\,/\,$0.119$\,m p95 with the margin
+restored ($\ge$\SI{1.49}{\meter}, zero breaches; \cref{tab:mc}). A sparse graph
+then costs accuracy only through the longer anchor chains, not through outright
+coverage failure.
+
+\paragraph{Closed-loop value of the DMHE.} The ablation feeds the controller the
+dead-reckoning local filter while the DMHE runs passively. The consequence of
+the $\sim$\SI{0.9}{\meter} estimate drift is now dynamical, not merely
+statistical: the formation-shape error during the blackout grows to
+\SI{0.449}{\meter} ($4.8\times$ the nominal \SI{0.094}{\meter}), the peak
+formation error rises to $4.2$\,m mean\,/\,$4.9$\,m p95 (nominal:
+$3.9$\,/\,$4.0$), and---because the safety filter acts on estimated
+positions---the true minimum separation is dragged to \SI{0.75}{\meter} with
+$\sim$\SI{0.8}{\second} per run below the design margin. The DMHE is therefore
+not an estimation nicety: it is what keeps the safety layer's world model
+accurate enough for its invariance guarantee to bind the physical vehicles.
+
+\section{Computational study of the embedded per-agent solvers}
+\label{sec:sim-compute}
+
+The studies above run the reference (Python) coordination layer. This section
+measures the \emph{embedded} controller and estimator of \cref{ch:peragent},
+instantiated on the drone models of this report through their model interface
+and driven in closed loop by a C benchmark harness. Three per-agent
+problems are timed: the translational MPC exactly as posed by the coordination
+layer ($n_x{=}6$, $n_u{=}3$, $N{=}25$, $12$ constraint rows), the \emph{full
+$13$-state quaternion hexacopter NMPC} ($n_u{=}4$, $N{=}20$, $14$ stage and $6$
+terminal rows, thrust/torque bounds and velocity state constraints active during
+the manoeuvre), and the translational MHE of the DMHE layer ($n_x{=}6$,
+$n_w{=}3$ constrained disturbance inputs, $M{=}8$). Timings are medians of
+best-of-seven runs on a single core of a shared cloud vCPU
+(\texttt{gcc -O3}, double precision, no parallelism); \cref{tab:compute}
+reports them.
+
+\begin{table}[t]
+\centering
+\caption{Per-agent solvers on the drone problems (single core, medians, best of
+$7$; ``warm'' is the solvers' warm-started mode, ``exact'' rebuilds the
+problem from scratch every sample). The applied-input/instant-estimate latency
+is the measurement-to-output path.}
+\label{tab:compute}
+\small
+\begin{tabular}{@{}llccccc@{}}
+\toprule
+Problem & Mode & Prepare & Feedback & Latency & Inner & Accuracy\\
+ & & [\si{\micro\second}] & [\si{\micro\second}] & [\si{\nano\second}] & iter. & \\
+\midrule
+Translational MPC & exact & 15.3 & 4.7 & 30 & 1.00 & KKT $3.6{\times}10^{-8}$\\
+\ ($n_x{=}6$, $N{=}25$) & warm & \textbf{2.7} & 5.5 & 30 & 1.00 & identical\\
+\midrule
+Quaternion NMPC & exact & 101.6 & 11.0 & 30 & 1.09 & KKT $2.8{\times}10^{-5}$\\
+\ ($n_x{=}13$, $N{=}20$) & warm & \textbf{8.5} & 13.2 & 30 & 1.09 & identical\\
+\midrule
+MHE & exact & 13.7 & 2.5 & 120 & 1.00 & RMSE 0.283 m\\
+\ ($n_x{=}6$, $M{=}8$) & warm & \textbf{5.5} & 2.4 & 120 & 1.00 & identical\\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Three observations. First, the absolute numbers: one complete constrained cycle
+of the \emph{full nonlinear quaternion-hexacopter} NMPC costs
+$\sim$\SI{115}{\micro\second} even when the problem is rebuilt from scratch every
+sample, and the applied input is available \SI{30}{\nano\second} after the
+state estimate arrives; the per-agent MHE cycle costs
+$\sim$\SI{8}{\micro\second}. At the \SI{20}{\hertz} coordination rate used in
+this chapter, the entire per-agent estimation-and-control core occupies well
+under $0.1\%$ of one embedded core, and even a \SI{1}{\kilo\hertz} attitude-rate
+deployment of the full NMPC would use a few percent. Second, the warm-start
+behaviour: reusing the work that remains valid from the previous sample cuts the
+median preparation by $5.7\times$ (translational), $11.9\times$ (quaternion) and
+$2.5\times$ (MHE), while the 99th-percentile preparation stays bounded by the
+occasional full refresh. Third, and decisive for a
+safety-critical system: the accuracy columns are \emph{identical} across
+modes---same KKT residuals, same millimetre-level closed-loop convergence, same
+estimation RMSE, and worst-case constraint violation at the
+$10^{-4}$ level in normalised units---so the speed-up is not bought with
+optimality. Solver failures over all runs: none; the inner solver loop
+terminated in at most $4$ passes. It is this combination---microsecond
+constrained solves, nanosecond feedback latency, deterministic memory
+(\SIrange{32}{209}{\kilo\byte} static per solver) and bounded per-sample
+work---that makes distributed constrained estimation and control of the kind
+studied here practical on multi-agent UAV hardware. Isolated timings, however,
+establish only that the solvers are fast enough; \cref{sec:sim-inloop} closes
+the argument by placing them in the loop.
+
+\section{The embedded solvers in the loop}
+\label{sec:sim-inloop}
+
+The final hexacopter study replaces the reference-layer estimator and
+controller with the \emph{embedded C implementations themselves}, called
+per-agent through the interface of \cref{sec:capi} while everything else---the
+nonlinear quaternion plants, the measurement generation, the consensus, the CBF
+safety filter, the flatness/attitude cascade---remains identical, with the
+noise streams paired across configurations. The loop is exactly the deployed
+signal path:
+\begin{equation*}
+\text{nonlinear plant}\ \rightarrow\ \text{embedded MHE}\ \rightarrow\
+\text{embedded NMPC}\ \rightarrow\ \text{CBF}\ \rightarrow\ \text{plant}.
+\end{equation*}
+Validation proceeded in two stages. A single-hexacopter loop was validated
+first: over a \SI{20}{\second} take-off-and-track mission on the same noise
+stream, the C and Python closed-loop trajectories differ by \SI{0.17}{\meter}
+mean (\SI{0.37}{\meter} maximum) over a multi-metre path, with the embedded
+estimator's error \emph{half} the reference filter's
+(\SI{0.088}{\meter} vs.\ \SI{0.182}{\meter}: the moving window out-smooths the
+one-step filter). The full six-agent mission of \cref{sec:sim-hexa} was then run
+in four configurations---reference layer; embedded estimator only; embedded
+controller only; both---over the same $15$ noise seeds each ($60$ runs).
+\Cref{tab:inloop} reports the ablation.
+
+\begin{table}[t]
+\centering
+\caption{Embedded-solver-in-the-loop equivalence study: the full six-agent
+mission (nominal scenario, $3/6$ GNSS-denied for \SI{10}{\second}) in four
+configurations over the same $15$ noise seeds. In-loop solver times are medians
+of every call made during the missions (prepare${+}$feedback, single shared
+core, alongside the Python harness). Divergences and safety-QP failures: zero
+in all $60$ runs.}
+\label{tab:inloop}
+\small
+\begin{tabular}{@{}lccccc@{}}
+\toprule
+Configuration & \shortstack{Denied RMSE\\mean\,/\,med (p95) [m]} &
+\shortstack{Shape\\err.\ [m]} & \shortstack{Min sep.\\{[m]}} &
+\shortstack{Margin\\breach} & \shortstack{In-loop solver\\median [\si{\micro\second}]}\\
+\midrule
+Reference layer (baseline) & 0.091\,/\,0.090 (0.100) & 0.092 & $\ge$1.55 & 0 & ---\\
+Embedded MHE only & 0.061\,/\,0.061 (0.069) & 0.097 & $\ge$1.54 & 0 & MHE $11.7{+}3.9$\\
+Embedded NMPC only & 0.092\,/\,0.091 (0.101) & 0.096 & $\ge$1.53 & 0 & NMPC $47.8{+}9.4$\\
+Embedded MHE $+$ NMPC & 0.062\,/\,0.061 (0.070) & 0.096 & $\ge$1.53 & 0 & $\approx76$ total\\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The table reads as an equivalence proof by ablation. Substituting the embedded
+\emph{controller} changes nothing statistically---denied-agent RMSE
+$0.091\to0.092$\,m, shape error within $0.004$\,m, the same safety margins---%
+as expected, since the embedded NMPC solves the same per-agent problem exactly
+(and additionally enforces the velocity envelope as hard state constraints).
+Substituting the embedded \emph{estimator} leaves formation and safety
+untouched while \emph{improving} the estimation error by a third
+($0.091\to0.061$\,m: window smoothing over $M{=}8$ intervals against a
+recursive one-step filter). The full embedded path combines both effects:
+statistically indistinguishable closed-loop behaviour, slightly better
+estimation, zero margin breaches, zero divergences---while every estimate and
+every command in the loop is produced by the deployed C implementations, whose
+in-loop cost totals $\approx$\SI{76}{\micro\second} per agent per cycle with
+the measurement-to-command latency still in the tens of nanoseconds. The
+multi-hop anchoring extension runs unchanged through the embedded path, since
+it only shapes the pseudo-measurement handed to the estimator
+($5/6$-denied with the full embedded loop: \SI{0.065}{\meter} denied-agent
+RMSE, margin intact). The claim this study licenses is therefore no longer that
+the solvers are individually fast enough, but that \emph{the complete
+distributed estimation-and-control loop has been validated with the embedded
+solver implementations in closed loop on the nonlinear multi-agent plant}.
+
+\section{Fixed-wing cluster}
+\label{sec:sim-fw}
+
+\paragraph{Setup.} Four Aerosonde aircraft (\cref{tab:fw-params}) fly a
+coordinated loiter. A virtual leader traverses a circular path of radius
+\SI{180}{\meter} at \SI{25}{\meter\per\second}; the followers hold a
+displacement-based echelon, offset from the leader in along-track phase and in
+loiter radius. Each aircraft runs the cascaded autopilot of \cref{ch:formation}---%
+airspeed by throttle, altitude through a pitch loop and elevator, course through a
+roll loop and aileron, with a coordinated-turn rudder---driven by look-ahead
+carrot guidance toward its moving slot, on the full $12$-state nonlinear plant
+from the numerically computed trim.
+
+\paragraph{Results.} \Cref{fig:fw-traj} shows the formation: the four aircraft
+settle onto concentric loiter circles---the radial echelon---and hold altitude
+at \SI{120}{\meter} after the initial transient decays within about
+\SI{25}{\second} (transient altitude excursion below \SI{4.2}{\meter};
+steady-state altitude error below \SI{0.01}{\meter}).
+\Cref{fig:fw-formation} shows the mean slot-tracking error converging to
+\SI{9.5}{\meter}---a steady guidance lag of $5\%$ of the loiter radius,
+sustained through the continuous coordinated turn. Repeating the run from ten
+randomised initial-condition scatters ($\sigma=\SI{3}{\meter}$) converges to the
+same coordinated limit cycle in every case (steady-state spread below
+\SI{0.01}{\meter}), so the formation is an attractor of the guidance loop rather
+than an artefact of one initialisation. The study confirms that the same
+coordination architecture drives a fixed-wing cluster---which cannot hover, must
+hold airspeed and turns only by banking---through the vehicle-specific autopilot
+and guidance, with no change to the distributed logic.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.92\linewidth]{figs/fig_fw_traj.pdf}
+\caption{Fixed-wing cluster on a coordinated loiter: top view (left), showing the
+four aircraft on concentric echelon circles, and altitude (right), held at
+\SI{120}{\meter}.}
+\label{fig:fw-traj}
+\end{figure}
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=0.74\linewidth]{figs/fig_fw_formation.pdf}
+\caption{Fixed-wing formation slot-tracking error, converging and held through
+the continuous coordinated turn.}
+\label{fig:fw-formation}
+\end{figure}
+
+\section{Discussion}
+\label{sec:sim-discussion}
+
+\Cref{tab:headline} consolidates the campaign. Across both vehicle classes the
+framework behaves as the theory predicts, and the Monte-Carlo evidence sharpens
+each claim into a statistical one. The consensus layer agrees on the shared
+reference within a control period on every tested graph; the model-predictive
+controllers track their slots within actuator and tilt limits in all $126$ runs
+with no divergence; the CBF safety filter keeps the collision-avoidance set
+forward-invariant whenever its world model is accurate, and the campaign
+quantifies precisely when it is not---the margin erodes only under broken anchor
+coverage or with the estimator ablated, and physical contact never occurs. The
+distributed estimator converts relative sensing into resilience with a p95
+denied-agent error under \SI{0.13}{\meter} through $5/6$ denial once multi-hop
+anchoring restores coverage, and the computational study shows the per-agent
+machinery executing constrained nonlinear solves in microseconds with
+warm-start factors of $6$--$12\times$ at identical accuracy. The in-the-loop
+study closes the gap between those two kinds of evidence: the deployed C
+implementations, substituted into the closed loop under paired noise,
+reproduce the reference behaviour to within statistical noise---improving the
+estimation---so the timing figures and the behavioural figures describe one
+and the same computational path. The results are produced on the full nonlinear plants with
+noisy measurements, so they exercise the genuine attitude--translation coupling
+of the quaternion multirotor model and the stall-limited, minimum-airspeed
+behaviour of the fixed-wing model, not linearised surrogates.
+
+\begin{table}[t]
+\centering
+\caption{Consolidated headline results. RMSE values are Monte-Carlo means
+(p95 in parentheses) over the scenario's seeds; compute times are single-core
+medians (per-solver breakdown in \cref{tab:compute}).}
+\label{tab:headline}
+\footnotesize
+\setlength{\tabcolsep}{4pt}
+\renewcommand{\arraystretch}{1.1}
+\begin{tabular}{@{}p{0.30\linewidth}
+  >{\centering\arraybackslash}p{0.135\linewidth}
+  >{\centering\arraybackslash}p{0.095\linewidth}
+  >{\centering\arraybackslash}p{0.085\linewidth}
+  >{\centering\arraybackslash}p{0.185\linewidth}@{}}
+\toprule
+Scenario & Denied RMSE [m] & Min sep.\ [m] & Shape err.\ [m] & Per-agent compute\\
+\midrule
+Hexacopter nominal, $N_a{=}6$, \SI{10}{s} blackout $3/6$ (30 seeds) &
+0.091 (0.099) & $\ge$1.55 & 0.094 &
+\multirow{2}{*}{\shortstack[c]{MPC 2.7--15\,\si{\micro\second}\\
+MHE 5.5--14\,\si{\micro\second}}}\\[1mm]
+\ + denial up to $4/6$ (48 seeds) & $\le$0.106 (0.117) & $\ge$1.49 & $\le$0.101 & \\
+\midrule
+Anchor coverage broken ($5/6$ denied; ring graph) &
+0.45--0.51 (0.69--0.80) & 0.90--0.98 & 0.24--0.27 & unchanged\\
+\ + multi-hop anchoring (24 seeds) & 0.11--0.12 (0.13) & $\ge$1.49 & $\le$0.10 & unchanged\\
+\midrule
+Ablation: controller on dead-reckoning filter &
+(0.91 in loop) & 0.75 & 0.449 & unchanged\\
+\midrule
+Embedded C solvers in the loop (15 paired seeds) &
+0.062 (0.070) & $\ge$1.53 & 0.096 &
+$\approx$76\,\si{\micro\second}/agent, in loop\\
+\midrule
+Fixed-wing echelon loiter, $N_a{=}4$ (10 init.\ seeds) &
+--- & spacing held & slot lag 9.5 & autopilot layer\\
+\bottomrule
+\end{tabular}
+\end{table}

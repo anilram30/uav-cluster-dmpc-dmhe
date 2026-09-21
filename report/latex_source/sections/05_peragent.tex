@@ -1,0 +1,204 @@
+\chapter{Per-Agent Real-Time Estimation and Control}
+\label{ch:peragent}
+
+Each agent carries two constrained optimisation-based solvers as its onboard
+computational core: a nonlinear model-predictive \emph{controller} that computes
+the vehicle's inputs, and a moving-horizon \emph{estimator} that reconstructs its
+state and unmeasured disturbances. The two are a matched pair, built on the same
+real-time-iteration and constraint-handling machinery, and both are designed for
+microsecond-to-millisecond execution on an embedded companion computer. This
+chapter states their problem formulations, the real-time pattern in which they
+are executed, and the application programming interface through which the
+distributed layers of \cref{ch:dmhe,ch:dmpc} use them.
+
+\begin{center}
+\fcolorbox{accent!55}{accent!5}{\begin{minipage}{0.94\linewidth}
+\vspace{2pt}
+\textbf{Scope of this edition.} The solvers' internal algorithms---their
+constraint handling, linear algebra and factorisation strategy---are the subject
+of separate ongoing research by the author, extending an MSc thesis on
+sequential-linear-quadratic-programming MPC, and are not disclosed here. They
+are treated throughout this report as a \emph{fixed, validated capability},
+specified by the problem classes they solve (\cref{eq:ocp,eq:mhe}), the
+real-time pattern they execute in (\cref{sec:rti}), the interface they are
+reached through (\cref{sec:capi}) and the timing envelope measured in
+\cref{ch:simulation}. Every distributed result in this report depends only on
+those four things: the coordination layers never see solver internals, and any
+solver meeting the same interface can be substituted---as the accompanying
+reference implementation demonstrates.
+\vspace{3pt}
+\end{minipage}}
+\end{center}
+
+\section{The model-predictive controller}
+\label{sec:mpc}
+
+\paragraph{Optimal control problem.} At each sampling instant, with the freshly
+estimated state $\est{\state}$ as parameter, the controller transcribes the
+finite-horizon optimal control problem by multiple shooting over a prediction
+horizon $N$:
+\begin{subequations}
+\label{eq:ocp}
+\begin{align}
+\min_{\substack{\state_0,\dots,\state_N\\ \ctrl_0,\dots,\ctrl_{N-1}}}\quad
+& \sum_{k=0}^{N-1}\ell_k(\state_k,\ctrl_k)+\ell_N(\state_N)\\
+\text{s.t.}\quad
+& \state_0=\est{\state},\\
+& \state_{k+1}=\vv{f}_d(\state_k,\ctrl_k), && k=0,\dots,N-1,\\
+& \vv{c}(\state_k,\ctrl_k)\le\vv{0}, && k=0,\dots,N-1,\\
+& \vv{c}_N(\state_N)\le\vv{0},
+\end{align}
+\end{subequations}
+where $\vv{f}_d$ is the RK4 discretisation of the vehicle dynamics
+(\cref{ch:hexacopter,ch:fixedwing}), $\ell_k=\tfrac12\norm{\state_k-\state_k^{r}}_Q^2
++\tfrac12\norm{\ctrl_k-\ctrl_k^{r}}_R^2$ and $\ell_N=\tfrac12\norm{\state_N-\state_N^{r}}_{Q_N}^2$
+are tracking-quadratic stage and terminal costs with weights $Q,Q_N\succeq0$,
+$R\succ0$, and $\vv{c},\vv{c}_N$ are the general nonlinear stage and terminal
+inequality constraints. Crucially for the UAV application, $\vv{c}$ carries
+\emph{both} input constraints (thrust and torque limits, control-surface
+saturations) \emph{and} state constraints (attitude and rate envelopes,
+minimum airspeed, collision-avoidance rows contributed by the coordination layer
+of \cref{ch:dmpc}); pure state constraints receive no special treatment.
+
+\paragraph{Constraint handling.} The inequality constraints in \cref{eq:ocp} are
+imposed by the solver itself, on the full nonlinear problem. They are not
+softened into penalty terms, relaxed into box bounds on the inputs, or enforced
+by clipping the computed command---the applied input $\ctrl_0$ of
+\cref{eq:rti-feedback} already carries the geometry of whichever constraints are
+active at the current linearisation point. This matters for the distributed
+layers: the coupling constraints of \cref{ch:dmpc} are pushed into $\vv{c}$ as
+additional rows through the interface of \cref{sec:capi}, and are then handled
+by the same mechanism, at the same cost per row, as the vehicle's own actuator
+and envelope limits.
+
+\section{Real-time iteration}
+\label{sec:rti}
+
+Both solvers execute in the real-time-iteration (RTI) pattern of Diehl
+\etal \cite{diehl2005realtime,gros2020linear}: rather than iterating a
+nonlinear program to convergence within one sampling interval, each sample
+performs a \emph{single} iteration on a problem that has itself shifted by one
+step, so that the optimisation converges along the closed-loop trajectory rather
+than within a sample. The cycle splits into two phases of very different cost:
+
+\begin{itemize}[nosep,leftmargin=1.4em]
+  \item a \textbf{preparation} phase, which performs the expensive work that
+        does \emph{not} depend on the measurement about to arrive---model
+        linearisation, sensitivity generation, and the matrix-level linear
+        algebra---and which runs in the interval between samples;
+  \item a \textbf{feedback} phase, which consumes the arriving measurement and
+        emits the applied input immediately.
+\end{itemize}
+
+Because the first-stage feedback gain $\mat{K}_0$ and feedforward
+$\vv{\kappa}_0$ are already available when the measurement arrives, the
+measurement-to-actuation path is a single affine evaluation,
+\begin{equation}
+\boxed{\;\ctrl_0=\bar{\ctrl}_0+\mat{K}_0\,(\est{\state}-\bar{\state}_0)+\vv{\kappa}_0\;}
+\label{eq:rti-feedback}
+\end{equation}
+about the current prediction $(\bar{\state}_0,\bar{\ctrl}_0)$. The latency from
+measurement to input is therefore that of one gain multiplication---tens of
+nanoseconds on an embedded core (\cref{sec:sim-compute})---while the remainder of the
+cycle completes within the sampling interval. The estimator runs the mirror
+image of this split, with an instantaneous state output on the arrival of
+$\vv{y}_t$; \cref{sec:sim-compute} measures both phases for the vehicle models of
+this report.
+
+\section{The moving-horizon estimator}
+\label{sec:mhe}
+
+The estimator is the dual of the controller: instead of predicting inputs over a
+future horizon, it fits states and disturbances to a past window of measurements.
+
+\paragraph{Estimation problem.} At instant $t$, given the measurement history
+$\vv{y}_{t-M},\dots,\vv{y}_t$, the known inputs $\ctrl_{t-M},\dots,\ctrl_{t-1}$ and
+an \emph{arrival} pair $(\vv{x}_a,\Lambda_a)$ summarising all information before
+the window, the estimator solves the window nonlinear least-squares problem over
+$M$ intervals in the variables $\vv{z}=(\state_0,\vv{w}_0,\state_1,\dots,\vv{w}_{M-1},\state_M)$
+(node $k$ holds $\vv{y}_k:=\vv{y}_{t-M+k}$):
+\begin{subequations}
+\label{eq:mhe}
+\begin{align}
+\min_{\vv{z}}\quad
+&\tfrac12\norm{\state_0-\vv{x}_a}_{\Lambda_a}^2
++\sum_{k=0}^{M}\tfrac12\norm{\vv{y}_k-\vv{h}(\state_k,\ctrl_k)}_V^2
++\sum_{k=0}^{M-1}\tfrac12\norm{\vv{w}_k}_W^2\\
+\text{s.t.}\quad
+&\state_{k+1}=\vv{F}(\state_k,\ctrl_k,\vv{w}_k), && k=0,\dots,M-1,\\
+&\vv{c}(\state_k,\vv{w}_k)\le\vv{0}, && k=0,\dots,M-1,\\
+&\vv{c}_M(\state_M)\le\vv{0},
+\end{align}
+\end{subequations}
+where $\vv{w}_k\in\R^{n_w}$ is an estimated disturbance input (an unmeasured
+force, load, bias walk or parameter drift; ``input constraints'' on the
+estimation side thus bound these disturbances), $V\succeq0$ is the measurement
+information (zero rows encode missing or multi-rate measurements) and $W\succ0$
+the disturbance information. The arrival term is the estimation-side counterpart
+of the terminal cost; the constraints again carry both state rows (state-of-charge
+limits, non-negativity, physical envelopes) and disturbance rows.
+
+\paragraph{Window recursion and the arrival cost.} Problem \cref{eq:mhe} is
+treated with the same constraint handling and the same real-time-iteration
+pattern as the controller, one iteration per measurement, with the
+instantaneous output described in \cref{sec:rti}. As the window advances, the
+information carried by the stage that leaves it is not discarded but folded into
+the arrival pair $(\vv{x}_a,\Lambda_a)$ by exact marginalisation---the standard
+information-form construction of the moving-horizon arrival cost
+\cite{rao2003constrained,rawlings2017model}---so that the estimator retains
+its full history at constant per-sample cost.
+
+\paragraph{Kalman-filter reduction.} A property we use directly in the
+distributed estimator of \cref{ch:dmhe} is that, for a \emph{linear}
+model, quadratic costs and \emph{no active constraints}, the solution of
+\cref{eq:mhe} coincides exactly with that of the information/covariance Kalman
+filter (equivalently, the extended Kalman filter for a linearised model). The
+moving horizon estimator is therefore a strict generalisation of the Kalman
+filter that adds (i) hard state and disturbance constraints, (ii) window
+smoothing, and (iii) robustness to model nonlinearity, degrading gracefully to
+the familiar filter when those are absent. In \cref{ch:dmhe} the translational
+estimation sub-problem is linear, and we exploit this reduction for a
+numerically robust per-agent filter.
+
+\section{The C application programming interface}
+\label{sec:capi}
+
+Both solvers are exposed to the coordination layer through a small, allocation-%
+free C interface with statically sized problem data, so that the C++ layer of
+\cref{ch:architecture} never needs to know how the solver is built. The
+controller interface is
+\begin{verbatim}
+  typedef struct { int nx,nu,nc,ncN,N; double Ts; } MPCDims;
+  typedef struct MPCProblem MPCProblem;
+
+  MPCProblem* mpc_create (const MPCDims *d);
+  int  mpc_set_weights   (MPCProblem *p, const double *Q,
+                          const double *R, const double *QN);
+  int  mpc_set_reference (MPCProblem *p, const double *xref,
+                          const double *uref);      // formation slot
+  int  mpc_set_constraint_bounds(MPCProblem *p, const double *c_ub);
+  int  mpc_prepare  (MPCProblem *p);          // before the measurement
+  int  mpc_feedback (MPCProblem *p, const double *xhat, double *u0);
+  void mpc_destroy  (MPCProblem *p);
+\end{verbatim}
+with a symmetric interface for the estimator (\texttt{mhe\_create},
+\texttt{mhe\_init}, \texttt{mhe\_prepare(u\_prev,u\_t)},
+\texttt{mhe\_feedback(y\_t,xhat)}, \texttt{mhe\_fuse\_relative(z,Pj)},
+\texttt{mhe\_destroy}). The distributed layers call \texttt{mpc\_set\_reference},
+\texttt{mpc\_set\_constraint\_bounds} and \texttt{mhe\_fuse\_relative} to inject
+the coupling terms derived in the next chapters---formation references,
+collision-avoidance rows and relative measurements---without any change to the
+solver core. The solver, in the words of the architecture note that motivated
+this design, ``does not even need to know that it is being used by a many-agent
+distributed system.''
+
+Two properties of this boundary are worth stating explicitly, because the rest of
+the report relies on them. First, it is \emph{substitutable}: the accompanying
+implementation ships a dependency-free reference behind exactly this interface
+(a finite-horizon LQR for the controller, an information filter for the
+estimator---precisely the linear reductions of \cref{sec:mhe}), so the entire
+distributed stack compiles, runs and reproduces its results with no proprietary
+component present. Second, it is \emph{instance-wise}: all state lives in the
+caller-owned problem objects, so one process hosts as many independent solver
+instances as it has agents, which is what makes the in-the-loop study of
+\cref{sec:sim-inloop} possible.

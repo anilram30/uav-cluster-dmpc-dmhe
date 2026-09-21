@@ -1,0 +1,89 @@
+\chapter{Formation, Clustering and Coordination}
+\label{ch:formation}
+
+The distributed estimator and controller of the previous two chapters provide
+each agent with a state estimate and a safe input. This chapter defines the
+cluster-level behaviours those primitives serve---how a formation is specified,
+how the graph is maintained, and how the cluster reconfigures and tolerates
+faults.
+
+\section{Formation specifications}
+
+Three standard specifications of a formation are supported, in increasing order
+of decentralisation \cite{oh2015survey}.
+\begin{itemize}[leftmargin=1.4em]
+  \item \textbf{Position-based (virtual structure).} The formation is a rigid
+        body---the ``virtual structure''---and each agent tracks a fixed offset
+        $\vv{d}_i$ from its moving frame \cite{ren2004formation}. This is the
+        specification used in \cref{ch:dmpc}: the centre $\vv{c}(t)$ is the
+        virtual structure's origin, agreed by consensus, and $\vv{d}_i$ places
+        agent $i$. It is simple and exact but requires a common reference frame.
+  \item \textbf{Displacement-based (leader--follower).} Followers maintain
+        prescribed relative displacements to a leader (or to designated
+        neighbours) in a common orientation. The fixed-wing study of
+        \cref{ch:simulation} uses this form: a virtual leader traverses a loiter
+        and followers hold along-track and cross-track offsets.
+  \item \textbf{Distance-based (rigidity).} Only inter-agent distances are
+        prescribed; the formation is maintained if the underlying framework is
+        infinitesimally rigid \cite{krick2009stabilisation}. This is the most
+        decentralised---no common frame is needed---and the most subtle, since
+        distance constraints admit reflections and flips.
+\end{itemize}
+In all three the desired geometry enters the controller as the reference slot or
+as inter-agent constraints, and the DMHE supplies the relative-position estimates
+that displacement- and distance-based schemes require.
+
+\section{The communication graph and its maintenance}
+
+The graph $\Graph$ of \cref{sec:graph} is not static: links appear and vanish as
+agents move in and out of communication range, and the topology must stay
+connected for consensus and coordination to function. Two mechanisms keep it so.
+
+\paragraph{Neighbour discovery.} Each agent periodically broadcasts a beacon with
+its identity, estimated position and covariance; agents within range that hear it
+add the sender to $\Neigh_i$ and drop neighbours whose beacons lapse. The
+resulting time-varying graph is exactly the switching topology whose consensus
+convergence is guaranteed, under a joint-connectivity condition, by
+Olfati-Saber and Murray \cite{olfati2004consensus,olfati2007consensus} and by Fax
+and Murray \cite{faxmurray2004}.
+
+\paragraph{Connectivity maintenance.} Because the algebraic connectivity
+$\lambda_2(\Lap)$ sets the coordination rate and must stay positive, the cluster
+monitors it (each agent can estimate $\lambda_2$ by a distributed power
+iteration on $\Lap$) and the controller penalises actions that would break a
+critical link---equivalently, a connectivity-preserving CBF of the form
+\cref{eq:cbf-h} with $h=R_{\text{comm}}^2-\norm{\vv{p}_i-\vv{p}_j}^2$ keeps a
+needed neighbour within range. Collision avoidance (a lower bound on separation)
+and connectivity maintenance (an upper bound on the distance to a required
+neighbour) are thus the same mechanism with opposite sign.
+
+\section{Reconfiguration and fault handling}
+
+\paragraph{Reconfiguration.} A formation change is a change of the offsets
+$\{\vv{d}_i\}$ (or of the prescribed distances). Because the offsets enter only
+through the MPC reference and the coupling constraints, a reconfiguration is
+executed simply by ramping $\vv{d}_i$ to their new values; the controllers track
+the moving slots and the safety filter of \cref{sec:cbf} guarantees the transient
+stays collision-free even when the intermediate geometry brings agents close.
+The simulation study exercises exactly this: a six-agent ring contracts and
+rotates mid-mission.
+
+\paragraph{Fault handling.} Agent faults are detected through the same beacon
+mechanism: a lapsed beacon, or an innovation/residual monitor on a neighbour's
+broadcast estimate, flags a failed or misbehaving agent. On detection the cluster
+\emph{re-clusters}: the failed agent is removed from every $\Neigh_i$, the
+formation offsets are re-assigned among the survivors (a small assignment problem
+solved by consensus), and the virtual structure is re-scaled. The over-actuation
+of the hexacopter (\cref{sec:hexa-mixer}) provides a second, vehicle-level layer
+of fault tolerance: an agent that loses a single rotor remains controllable in
+thrust and tilt and can hold or leave the formation gracefully rather than
+falling from it \cite{michieletto2018fundamental}.
+
+\paragraph{Heterogeneity.} Because the coordination layer sees each agent only
+through the common interface of \cref{sec:capi}---a state estimate in, a safe
+input out---a cluster may mix hexacopters and fixed-wing aircraft freely. The
+vehicle class changes $\vv{f}_i$, the constraint set $\vv{c}_i$ (a fixed-wing
+carries a minimum-airspeed row a hexacopter does not) and the achievable
+formation geometry (fixed-wing slots must respect turn-rate limits), but not the
+distributed algorithms of \cref{ch:dmhe,ch:dmpc}. This is the payoff of routing
+all vehicle-specific detail through the per-agent solvers.

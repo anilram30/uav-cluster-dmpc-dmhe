@@ -1,0 +1,66 @@
+\chapter*{Abstract}
+\addcontentsline{toc}{chapter}{Abstract}
+
+This report develops, from first principles, a complete mathematical and
+software framework for the distributed real-time estimation and control of
+clusters of unmanned aerial vehicles (UAVs) comprising two dynamically
+dissimilar vehicle classes: multirotor \emph{hexacopters}, modelled with full
+unit-quaternion attitude dynamics, and \emph{fixed-wing} aircraft, modelled with
+the standard six-degree-of-freedom rigid-body aerodynamics of Beard and McLain
+instantiated on the Aerosonde airframe as a small-scale surrogate for a
+medium-altitude long-endurance platform.
+
+The two vehicle models are derived in full: every reference frame, kinematic
+relation, force and moment, and Jacobian is stated explicitly, and every symbol
+is defined at the point of use. For the hexacopter we derive the Hamilton
+quaternion kinematics $\dot{\quat{q}}=\tfrac12\,\quat{q}\qmul[0,\vv{\omega}]$,
+the Newton--Euler translational and rotational dynamics, the rotor
+thrust/torque model, and the control-allocation mixer that maps six rotor
+speeds to the collective-thrust/body-torque wrench, including its rank
+structure and single-rotor-failure redundancy. For the fixed-wing aircraft we
+derive the wind triangle, the sigmoid-blended stall aerodynamics, the full
+force and moment coefficient expansions, and the coupled rotational dynamics in
+the product-of-inertia $\Gamma$ form, together with a numerically computed
+straight-and-level trim.
+
+Each agent runs two constrained real-time-iteration solvers as its onboard
+computational core: a nonlinear model-predictive \emph{controller} and a
+moving-horizon \emph{estimator}, both of which impose general nonlinear state and
+input constraints on the full problem and execute in the real-time-iteration
+pattern, one iteration per sample, with the measurement-to-input path reduced to
+a single affine evaluation. Around this core we construct
+a distributed moving-horizon estimation (DMHE) layer, in which agents fuse
+relative inter-agent measurements to remain localised through GNSS outages, and
+a distributed model-predictive control (DMPC) layer that couples the agents
+through formation objectives and control-barrier-function collision-avoidance
+constraints, coordinated over a communication graph by consensus and
+alternating-direction methods.
+
+A dependency-free reference implementation---C for the numerical core, C++ for
+the coordination layer, and Python for simulation---accompanies the report. In
+closed-loop simulation on the full nonlinear plants, a six-hexacopter cluster
+assembles and reconfigures a formation while maintaining collision-free
+separation, and the DMHE keeps GNSS-denied agents localised to within
+\SI{9}{\centi\meter} of ground truth through a ten-second blackout during which a
+dead-reckoning filter drifts past \SI{1.2}{\meter}; a four-aircraft fixed-wing
+cluster holds a coordinated-turn echelon formation. A $126$-run Monte-Carlo
+campaign---over noise realisations, GNSS-denial severities from one to five of
+six agents, degraded communication graphs and an estimator ablation---records
+zero divergences and zero solver failures, a 95th-percentile denied-agent error
+below \SI{0.12}{\meter} whenever every denied agent retains a localised
+neighbour, and isolates \emph{anchor coverage} of the communication graph as the
+condition on which that resilience rests. A computational study instantiates the
+embedded solvers on the drone models themselves: one constrained
+real-time-iteration cycle of the full quaternion-hexacopter NMPC executes in
+about a hundred microseconds re-linearised, or below ten microseconds median
+in its warm-started mode, with a \SI{30}{\nano\second}
+measurement-to-input latency and accuracy identical across modes. The embedded
+implementations are finally substituted into the closed loop itself: over
+paired-seed cluster campaigns the deployed C estimator and controller
+reproduce the reference behaviour with zero safety violations while
+\emph{improving} the estimation error to six centimetres, and a leveled
+multi-hop anchoring extension of the DMHE restores decimetre accuracy in the
+anchor-coverage-broken cases, so the complete distributed
+estimation-and-control loop is validated with the embedded solvers in it on
+the nonlinear multi-agent plant. Every reported number is produced by the
+accompanying code.

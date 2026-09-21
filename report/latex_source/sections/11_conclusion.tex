@@ -1,0 +1,74 @@
+\chapter{Conclusions and Future Work}
+\label{ch:conclusion}
+
+This report has developed, from first principles and in full mathematical detail,
+a framework for the distributed real-time estimation and control of heterogeneous
+UAV clusters. Two vehicle models were derived completely: a hexacopter with unit-%
+quaternion attitude dynamics---Hamilton kinematics, Newton--Euler translational
+and rotational dynamics, rotor thrust/torque, and the over-actuated six-rotor
+mixer with its rank structure and fault tolerance---and a fixed-wing aircraft in
+the Beard--McLain six-degree-of-freedom formulation, with the wind triangle, the
+sigmoid-blended stall aerodynamics, the full force and moment coefficient
+expansions and the product-of-inertia rotational dynamics, on the fully
+parameterised Aerosonde airframe. Every frame, relation and Jacobian was stated
+explicitly and validated numerically.
+
+Around a per-agent core of two constrained real-time solvers---a model-predictive
+controller and a moving-horizon estimator, both imposing general nonlinear
+constraints on the full problem and executing one real-time iteration per
+sample---the report constructed a distributed moving-horizon
+estimator, in which agents fuse relative measurements to stay localised through
+GNSS outages, and a distributed model-predictive controller, coupling the agents
+through consensus on a shared reference, decomposition of the coupling
+constraints, and control-barrier-function collision avoidance. A three-language
+software architecture (C core, C++ coordination, Python research) and a companion
+implementation realise the framework. The simulation evidence is statistical,
+not anecdotal: beyond the representative missions, a $126$-run Monte-Carlo
+campaign over noise realisations, denial severities, degraded graphs and an
+estimator ablation recorded no divergences and no solver failures, established
+tight percentile bounds on the estimation and formation errors, exposed
+\emph{anchor coverage} of the communication graph as the structural condition
+for GNSS-denied resilience, and quantified the closed-loop cost of losing the
+distributed estimator ($4.8\times$ worse formation keeping and erosion of the
+safety margin). A computational study of the embedded solvers instantiated on
+the drone models measured microsecond-scale constrained solves---including the
+full $13$-state quaternion NMPC---with order-of-magnitude warm-start gains at
+identical accuracy; a leveled multi-hop anchoring extension of the DMHE then
+repaired the anchor-coverage failures exposed by the campaign; and an
+in-the-loop ablation study substituted the embedded C implementations into the
+closed loop under paired noise, reproducing the reference behaviour (and
+improving the estimation) with zero safety violations. The complete
+distributed estimation-and-control loop has thus been validated with the
+embedded solver implementations in closed loop on the nonlinear multi-agent
+plant---the claim that makes this real-time optimisation machinery a
+demonstrated, not merely plausible, basis for multi-agent UAV deployment.
+
+\paragraph{Future work.} Several extensions follow naturally from the structure
+built here.
+\begin{itemize}[nosep,leftmargin=1.4em]
+  \item \textbf{Joint distributed estimation and control.} The estimator and
+        controller are a matched pair; coupling their real-time iterations
+        directly---so that each agent runs a single distributed estimation-and-%
+        control step per sample---is a coherent next step and a genuinely novel
+        research direction beyond implementing either alone.
+  \item \textbf{Full arrival-cost consensus.} The leveled multi-hop anchoring
+        demonstrated here restores coverage whenever some agent retains an
+        absolute fix; extending to the full arrival-cost consensus of
+        \cite{battistelli2019distributed} would additionally handle the case in
+        which \emph{all} agents are intermittently absolute-denied, with
+        centralised-like stability.
+  \item \textbf{Tighter DMPC coupling.} Writing the collision-avoidance and
+        connectivity constraints directly into the MPC horizon (rather than the
+        safety filter) and closing the ADMM loop over the network would give
+        recursive-feasibility guarantees over the prediction horizon, not only
+        instantaneously.
+  \item \textbf{Hardware-in-the-loop and flight.} Running the C core on a
+        companion computer against a PX4 software-in-the-loop stack, and then in
+        flight, would validate the timing and robustness claims on real hardware
+        and real communication links.
+  \item \textbf{Heterogeneous missions.} Mixed hexacopter/fixed-wing clusters---%
+        loitering fixed-wing relays providing communication and GNSS anchoring to
+        manoeuvring multirotors---are directly supported by the interface-based
+        design and are a compelling application of the heterogeneity the
+        framework was built to accommodate.
+\end{itemize}

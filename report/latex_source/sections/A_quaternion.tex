@@ -1,0 +1,67 @@
+\chapter{Quaternion Identities and Proofs}
+\label{app:quat}
+
+This appendix collects the quaternion results used in \cref{ch:preliminaries,ch:hexacopter}
+and sketches their proofs. The Hamilton convention and the notation
+$\quat{q}=(q_w,\vv{q}_v)$ of \cref{sec:quaternions} are used throughout.
+
+\section*{Product, conjugate and norm}
+
+For $\quat{p}=(p_w,\vv{p}_v)$, $\quat{q}=(q_w,\vv{q}_v)$ the Hamilton product
+\cref{eq:qprod} follows from extending $ij=k$, $jk=i$, $ki=j$, $i^2=j^2=k^2=-1$
+bilinearly. Two consequences used repeatedly:
+\begin{align}
+\conj{(\quat{p}\qmul\quat{q})}&=\conj{\quat{q}}\qmul\conj{\quat{p}},\\
+\norm{\quat{p}\qmul\quat{q}}&=\norm{\quat{p}}\,\norm{\quat{q}},
+\end{align}
+the second showing that the product of unit quaternions is a unit quaternion, so
+$\Sph^3$ is closed under $\qmul$.
+
+\section*{Rotation matrix and the homomorphism}
+
+The rotation of $\vv{a}$ by $\quat{q}$ is $(0,\mat{R}(\quat{q})\vv{a})
+=\quat{q}\qmul(0,\vv{a})\qmul\conj{\quat{q}}$. Expanding with \cref{eq:qprod} and
+collecting terms gives \cref{eq:Rquat},
+\begin{equation}
+\mat{R}(\quat{q})=(q_w^2-\vv{q}_v\T\vv{q}_v)\mat{I}_3+2\vv{q}_v\vv{q}_v\T+2q_w\skewm{\vv{q}_v}.
+\end{equation}
+Orthogonality $\mat{R}\T\mat{R}=\mat{I}$ and $\det\mat{R}=+1$ follow for unit
+$\quat{q}$; the conjugate reverses the rotation,
+$\mat{R}(\conj{\quat{q}})=\mat{R}(\quat{q})\T$. The composition identity
+\begin{equation}
+\mat{R}(\quat{p}\qmul\quat{q})=\mat{R}(\quat{p})\,\mat{R}(\quat{q})
+\label{eq:hom}
+\end{equation}
+is the statement that $\quat{q}\mapsto\mat{R}(\quat{q})$ is a group homomorphism
+$\Sph^3\to\SO(3)$; it is two-to-one because $\mat{R}(-\quat{q})=\mat{R}(\quat{q})$.
+Both \cref{eq:hom} and the orthogonality are verified to machine precision in the
+accompanying \texttt{validate\_models.py}.
+
+\section*{Kinematics}
+
+Let $\quat{q}(t)$ be the body-to-inertial attitude. A body-frame angular velocity
+$\vv{\omega}^{b}$ over an infinitesimal time $\mathrm dt$ advances the attitude by
+the incremental rotation $\Exp(\vv{\omega}^{b}\mathrm dt)\approx(1,\tfrac12\vv{\omega}^{b}\mathrm dt)$,
+so
+\begin{equation}
+\quat{q}(t+\mathrm dt)=\quat{q}(t)\qmul\Bigl(1,\tfrac12\vv{\omega}^{b}\mathrm dt\Bigr)
+\ \Rightarrow\
+\dot{\quat{q}}=\tfrac12\,\quat{q}\qmul(0,\vv{\omega}^{b}),
+\end{equation}
+which is \cref{eq:qkin}. Writing the right product as a matrix acting on
+$\quat{q}$ gives $\dot{\quat{q}}=\tfrac12\bm{\Omega}(\vv{\omega}^{b})\quat{q}$ with
+$\bm{\Omega}$ of \cref{eq:Omega}. Differentiating $\norm{\quat{q}}^2=1$ gives
+$\quat{q}\T\dot{\quat{q}}=\tfrac12\quat{q}\T\bm{\Omega}\quat{q}=0$ (since
+$\bm{\Omega}$ is skew), confirming that the kinematics preserve the unit norm---%
+the property the exponential integrator \cref{eq:qint} enforces exactly in
+discrete time.
+
+\section*{Exponential map}
+
+For a rotation vector $\vv{\theta}=\theta\vv{u}$, $\norm{\vv{u}}=1$, the series
+$\Exp(\vv{\theta})=\sum_{n}\tfrac1{n!}(0,\tfrac12\vv{\theta})^{\qmul n}$ sums to
+\cref{eq:qexp},
+$\Exp(\vv{\theta})=(\cos\tfrac\theta2,\ \vv{u}\sin\tfrac\theta2)$, the unit
+quaternion of a rotation by $\theta$ about $\vv{u}$. Holding $\vv{\omega}^{b}$
+constant, the exact flow of \cref{eq:qkin} over $\Delta t$ is the right product by
+$\Exp(\vv{\omega}^{b}\Delta t)$, giving the norm-exact update \cref{eq:qint}.

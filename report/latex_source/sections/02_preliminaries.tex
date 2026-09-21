@@ -1,0 +1,261 @@
+\chapter{Mathematical Preliminaries and Notation}
+\label{ch:preliminaries}
+
+This chapter fixes the reference frames, the representations of rotation, the
+general rigid-body equations of motion and the graph-theoretic tools used in the
+rest of the report. Every object introduced here reappears in the vehicle models
+of \cref{ch:hexacopter,ch:fixedwing} and in the distributed layers of
+\cref{ch:dmhe,ch:dmpc,ch:formation}.
+
+\section{Reference frames}
+\label{sec:frames}
+
+A \emph{frame} is a right-handed orthonormal triad fixed to a body or to the
+environment. Four frames are used.
+\begin{itemize}[nosep,leftmargin=1.4em]
+  \item The \textbf{inertial frame} $\Frame{i}$ is fixed to the ground and
+        treated as non-accelerating. For the fixed-wing aircraft it is a
+        North--East--Down (NED) frame, with $\vv{e}_3$ pointing toward the centre
+        of the Earth; for the multirotor we use a local East--North--Up (ENU),
+        $z$-up frame, because thrust then acts along $+\vv{e}_3$. The choice is
+        purely one of convenience and is stated with each model.
+  \item The \textbf{body frame} $\Frame{b}$ is fixed to the vehicle at its
+        centre of mass, with $\vv{b}_1$ forward, $\vv{b}_2$ to the right (NED) or
+        left (ENU) and $\vv{b}_3$ completing the triad.
+  \item The \textbf{stability} and \textbf{wind} frames $\Frame{s},\Frame{w}$,
+        used only for the fixed-wing aircraft, are obtained from $\Frame{b}$ by
+        rotations through the angle of attack $\alpha$ and the sideslip angle
+        $\beta$ (\cref{sec:fw-airdata}).
+\end{itemize}
+A vector $\vv{a}$ resolved in frame $\Frame{x}$ is written $\vv{a}^{x}$.
+\Cref{fig:frames} shows the inertial and body frames.
+
+\begin{figure}[t]
+\centering
+\begin{tikzpicture}[>=Latex,scale=1.0]
+  % inertial frame
+  \coordinate (O) at (0,0);
+  \draw[->,thick] (O)--(1.6,0) node[right]{$\vv{i}_1$ (N/E)};
+  \draw[->,thick] (O)--(0,1.6) node[above]{$\vv{i}_2$ (E/N)};
+  \draw[->,thick] (O)--(-0.9,-0.7) node[below left]{$\vv{i}_3$};
+  \node at (-0.25,-0.25){$\Frame{i}$};
+  % body frame
+  \begin{scope}[shift={(4.6,1.4)},rotate=-22]
+    \node[rotate=-22] at (0,0) {\Large$\bullet$};
+    \draw[->,very thick,accent] (0,0)--(1.7,0) node[right]{$\vv{b}_1$};
+    \draw[->,very thick,accent] (0,0)--(0,1.4) node[above]{$\vv{b}_2$};
+    \draw[->,very thick,accent] (0,0)--(-0.8,-0.7) node[below]{$\vv{b}_3$};
+    \node[accent] at (-0.35,0.35){$\Frame{b}$};
+  \end{scope}
+  % position vector
+  \draw[->,dashed,gray] (O)--(4.6,1.4) node[midway,above,sloped]{$\vv{p}$};
+  % rotation label
+  \node at (3.0,0.2){$\mat{R}_b^i,\ \quat{q}$};
+\end{tikzpicture}
+\caption{Inertial frame $\Frame{i}$ and body frame $\Frame{b}$. The vehicle
+position $\vv{p}$ is resolved in $\Frame{i}$; the attitude is the rotation
+$\mat{R}_b^i\in\SO(3)$, equivalently the unit quaternion $\quat{q}$, that maps
+body-resolved vectors into the inertial frame.}
+\label{fig:frames}
+\end{figure}
+
+\section{Rotations and the group \texorpdfstring{$\SO(3)$}{SO(3)}}
+
+A rotation is an element of the \emph{special orthogonal group}
+\begin{equation}
+\SO(3)=\bigl\{\mat{R}\in\R^{3\times3}:\ \mat{R}\T\mat{R}=\mat{I}_3,\ \det\mat{R}=+1\bigr\}.
+\end{equation}
+The matrix $\mat{R}_b^i$ maps body-resolved coordinates to inertial coordinates,
+$\vv{a}^{i}=\mat{R}_b^i\,\vv{a}^{b}$. Its columns are the body axes expressed in
+$\Frame{i}$. Because $\mat{R}$ is orthogonal, $\bigl(\mat{R}_b^i\bigr)^{-1}
+=\mat{R}_b^{i\,\mathsf T}=\mat{R}_i^b$.
+
+\paragraph{The hat map.} For $\vv{a}=(a_1,a_2,a_3)\T\in\R^3$ define the
+skew-symmetric \emph{hat} matrix
+\begin{equation}
+\skewm{\vv{a}} \;=\;
+\begin{bmatrix} 0 & -a_3 & a_2\\ a_3 & 0 & -a_1\\ -a_2 & a_1 & 0\end{bmatrix}
+\in\so(3),
+\qquad
+\skewm{\vv{a}}\vv{b}=\vv{a}\times\vv{b}.
+\label{eq:hat}
+\end{equation}
+The set $\so(3)$ of skew matrices is the Lie algebra of $\SO(3)$; it is the
+tangent space at the identity. The kinematics of a rotating rigid body live in
+this algebra: if $\vv{\omega}^{b}$ is the body angular velocity, then
+\begin{equation}
+\dot{\mat{R}}_b^i \;=\; \mat{R}_b^i\,\skewm{\vv{\omega}^{b}}.
+\label{eq:Rdot}
+\end{equation}
+Equation~\eqref{eq:Rdot} is the rotation-matrix attitude kinematics; the
+quaternion form derived next is equivalent but uses four parameters instead of
+nine and integrates without loss of orthogonality.
+
+\paragraph{Euler angles.} The 3--2--1 (yaw--pitch--roll) Euler angles
+$(\phi,\theta,\psi)$ parameterise $\mat{R}_b^i$ as the product
+$\mat{R}_z(\psi)\mat{R}_y(\theta)\mat{R}_x(\phi)$. They are intuitive and used
+for the fixed-wing aircraft, but are singular at $\theta=\pm\tfrac\pi2$ (gimbal
+lock); the multirotor, which may pitch or roll to any angle, therefore uses
+quaternions.
+
+\section{Unit quaternions}
+\label{sec:quaternions}
+
+A \emph{quaternion} is a four-tuple $\quat{q}=(q_w,q_x,q_y,q_z)\T
+=(q_w,\vv{q}_v)\T$ with scalar part $q_w\in\R$ and vector part
+$\vv{q}_v\in\R^3$. We use the \textbf{Hamilton} convention throughout (the
+convention in which $ij=k$). The quaternion (Hamilton) product of
+$\quat{p}=(p_w,\vv{p}_v)$ and $\quat{q}=(q_w,\vv{q}_v)$ is
+\begin{equation}
+\quat{p}\qmul\quat{q}
+=\begin{bmatrix} p_w q_w-\vv{p}_v\T\vv{q}_v\\[2pt]
+p_w\vv{q}_v+q_w\vv{p}_v+\vv{p}_v\times\vv{q}_v\end{bmatrix}.
+\label{eq:qprod}
+\end{equation}
+The product is associative and bilinear but \emph{not} commutative. The
+\emph{conjugate} is $\conj{\quat{q}}=(q_w,-\vv{q}_v)$ and the norm is
+$\norm{\quat{q}}=\sqrt{q_w^2+\vv{q}_v\T\vv{q}_v}$. A \emph{unit quaternion},
+$\norm{\quat{q}}=1$, represents a rotation; the set of unit quaternions is the
+three-sphere $\Sph^3$, and $\conj{\quat{q}}=\quat{q}^{-1}$ for unit quaternions.
+
+\paragraph{Rotation by a quaternion.} A vector $\vv{a}\in\R^3$ is rotated by
+embedding it as the pure quaternion $(0,\vv{a})$ and conjugating,
+\begin{equation}
+(0,\vv{a}^{i}) = \quat{q}\qmul(0,\vv{a}^{b})\qmul\conj{\quat{q}},
+\end{equation}
+which is realised by the rotation matrix
+\begin{equation}
+\mat{R}(\quat{q})
+=\bigl(q_w^2-\vv{q}_v\T\vv{q}_v\bigr)\mat{I}_3
++2\,\vv{q}_v\vv{q}_v\T+2q_w\skewm{\vv{q}_v}.
+\label{eq:Rquat}
+\end{equation}
+Writing $\quat{q}=(q_w,q_x,q_y,q_z)$, \cref{eq:Rquat} expands to
+\begin{equation}
+\mat{R}(\quat{q})=
+\begin{bmatrix}
+1-2(q_y^2+q_z^2) & 2(q_xq_y-q_wq_z) & 2(q_xq_z+q_wq_y)\\
+2(q_xq_y+q_wq_z) & 1-2(q_x^2+q_z^2) & 2(q_yq_z-q_wq_x)\\
+2(q_xq_z-q_wq_y) & 2(q_yq_z+q_wq_x) & 1-2(q_x^2+q_y^2)
+\end{bmatrix}.
+\label{eq:Rquat-expanded}
+\end{equation}
+The map $\quat{q}\mapsto\mat{R}(\quat{q})$ is a two-to-one homomorphism:
+$\quat{q}$ and $-\quat{q}$ give the same rotation, and
+$\mat{R}(\quat{p}\qmul\quat{q})=\mat{R}(\quat{p})\mat{R}(\quat{q})$. These
+identities are proved and verified in \cref{app:quat}.
+
+\paragraph{Quaternion kinematics.} If the body rotates with angular velocity
+$\vv{\omega}^{b}$, the attitude quaternion evolves by
+\begin{equation}
+\boxed{\;\dot{\quat{q}}=\tfrac12\,\quat{q}\qmul(0,\vv{\omega}^{b})
+=\tfrac12\,\bm{\Omega}(\vv{\omega}^{b})\,\quat{q}\;}
+\label{eq:qkin}
+\end{equation}
+where, using \cref{eq:qprod}, the right-multiplication is written as the linear
+map
+\begin{equation}
+\bm{\Omega}(\vv{\omega})=
+\begin{bmatrix}
+0 & -\omega_x & -\omega_y & -\omega_z\\
+\omega_x & 0 & \omega_z & -\omega_y\\
+\omega_y & -\omega_z & 0 & \omega_x\\
+\omega_z & \omega_y & -\omega_x & 0
+\end{bmatrix}.
+\label{eq:Omega}
+\end{equation}
+Equation~\eqref{eq:qkin} is the central kinematic relation used in the
+hexacopter model; it is derived in \cref{app:quat} and is the quaternion
+counterpart of \cref{eq:Rdot}.
+
+\paragraph{Exponential map and norm-preserving integration.} The exponential map
+$\Exp:\R^3\to\Sph^3$ takes a rotation vector $\vv{\theta}=\theta\,\vv{u}$
+($\norm{\vv{u}}=1$) to the unit quaternion
+\begin{equation}
+\Exp(\vv{\theta})=\Bigl(\cos\tfrac{\theta}{2},\ \vv{u}\sin\tfrac{\theta}{2}\Bigr).
+\label{eq:qexp}
+\end{equation}
+Holding $\vv{\omega}^{b}$ constant over a step of length $\Delta t$, the exact
+solution of \cref{eq:qkin} is the group update
+\begin{equation}
+\quat{q}_{k+1}=\quat{q}_k\qmul\Exp(\vv{\omega}^{b}\Delta t),
+\label{eq:qint}
+\end{equation}
+which preserves $\norm{\quat{q}}=1$ to machine precision and is used by the
+integrator of \cref{ch:hexacopter}. This is a genuine advantage over
+\cref{eq:Rdot}: a Runge--Kutta step applied to the nine entries of $\mat{R}$
+drifts off $\SO(3)$ and must be re-orthonormalised.
+
+\section{Rigid-body dynamics}
+\label{sec:rigidbody}
+
+Both vehicle classes are rigid bodies, and both obey the Newton--Euler
+equations. Let $m$ be the mass, $\mat{J}\in\R^{3\times3}$ the inertia tensor
+about the centre of mass (resolved in $\Frame{b}$), $\vv{F}$ the resultant
+external force and $\vv{\tau}^{b}$ the resultant external moment about the centre
+of mass. Newton's second law in the inertial frame and Euler's rotational
+equation in the body frame read
+\begin{align}
+m\,\dot{\vv{v}}^{i} &= \vv{F}^{i}, \label{eq:newton}\\
+\mat{J}\,\dot{\vv{\omega}}^{b} &= -\,\vv{\omega}^{b}\times\bigl(\mat{J}\vv{\omega}^{b}\bigr)
++\vv{\tau}^{b}. \label{eq:euler}
+\end{align}
+The gyroscopic term $-\vv{\omega}\times\mat{J}\vv{\omega}$ in \cref{eq:euler}
+arises because Euler's equation is written in the rotating body frame; it couples
+the three rotational axes whenever $\mat{J}$ is not isotropic. The two vehicle
+models differ only in how $\vv{F}$ and $\vv{\tau}$ are generated---by rotors
+(\cref{ch:hexacopter}) or by aerodynamic surfaces and a propeller
+(\cref{ch:fixedwing})---and in whether translation is written in the inertial or
+body frame.
+
+\section{Algebraic graph theory for the cluster}
+\label{sec:graph}
+
+The communication topology of the cluster is a graph $\Graph=(\mathcal V,\mathcal E)$
+with vertices $\mathcal V=\{1,\dots,N_a\}$ (the agents) and edges
+$\mathcal E\subseteq\mathcal V\times\mathcal V$ (the links). The graph is
+\emph{undirected} if $(i,j)\in\mathcal E\Leftrightarrow(j,i)\in\mathcal E$. The
+\emph{neighbourhood} of agent $i$ is $\Neigh_i=\{j:(i,j)\in\mathcal E\}$, and its
+\emph{degree} is $d_i=\abs{\Neigh_i}$.
+
+\paragraph{Adjacency, degree and Laplacian.} The adjacency matrix
+$\mat{A}\in\R^{N_a\times N_a}$ has $A_{ij}=1$ if $(i,j)\in\mathcal E$ and $0$
+otherwise; the degree matrix is $\mat{D}=\diag(d_1,\dots,d_{N_a})$; and the
+\emph{graph Laplacian} is
+\begin{equation}
+\Lap=\mat{D}-\mat{A}.
+\label{eq:laplacian}
+\end{equation}
+The Laplacian is symmetric positive semidefinite with eigenvalues
+$0=\lambda_1\le\lambda_2\le\dots\le\lambda_{N_a}$. The all-ones vector
+$\vv{1}$ is always in its kernel, $\Lap\vv{1}=\vv{0}$. The second-smallest
+eigenvalue $\lambda_2(\Lap)$, the \emph{algebraic connectivity} or Fiedler value,
+is strictly positive if and only if the graph is connected, and it sets the
+convergence rate of the consensus and distributed-optimisation algorithms of
+\cref{ch:dmhe,ch:dmpc}.
+
+\paragraph{Consensus.} The prototypical distributed operation is
+\emph{average consensus}. If each agent holds a value $\vv{z}_i$ and updates it
+by
+\begin{equation}
+\dot{\vv{z}}_i=-\sum_{j\in\Neigh_i}\bigl(\vv{z}_i-\vv{z}_j\bigr),
+\qquad\text{equivalently}\qquad
+\dot{\vv{Z}}=-\Lap\,\vv{Z},
+\label{eq:consensus}
+\end{equation}
+then on a connected graph every $\vv{z}_i$ converges to the average
+$\tfrac1{N_a}\sum_j\vv{z}_j(0)$ at a rate governed by $\lambda_2(\Lap)$. In
+discrete time we use the \emph{Metropolis--Hastings} weights
+\begin{equation}
+W_{ij}=\frac{1}{1+\max(d_i,d_j)}\ \ (j\in\Neigh_i),\qquad
+W_{ii}=1-\!\!\sum_{j\in\Neigh_i}\!\!W_{ij},
+\label{eq:metropolis}
+\end{equation}
+which make the update matrix $\mat{W}$ doubly stochastic with spectral radius on
+the disagreement subspace strictly below one, so the iteration
+$\vv{z}_i^{+}=\sum_j W_{ij}\vv{z}_j$ is contractive for \emph{any} connected
+graph and \emph{any} degree. (A naive fixed step $\vv{z}_i^{+}=\vv{z}_i
++\epsilon\sum_{j\in\Neigh_i}(\vv{z}_j-\vv{z}_i)$ is stable only for
+$\epsilon<1/d_{\max}$; the Metropolis weights remove this tuning constraint, a
+fact we rely on in the coordination layer.) These tools are developed further,
+with references, in \cref{ch:formation}.

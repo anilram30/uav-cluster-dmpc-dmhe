@@ -1,0 +1,87 @@
+\chapter{Vehicle Parameter Tables}
+\label{app:param}
+
+The physical parameters used in the models and the simulation study are listed
+here. The hexacopter values are those of a published multirotor model; the
+fixed-wing values are the Aerosonde first-edition parameters of
+Beard and McLain \cite{beard2012small}.
+
+\section{Hexacopter}
+
+\begin{table}[h]
+\centering
+\caption{Hexacopter physical parameters (\cref{ch:hexacopter}).}
+\label{tab:hexa-params}
+\begin{tabular}{@{}llll@{}}
+\toprule
+Symbol & Meaning & Value & Unit\\
+\midrule
+$m$ & mass & $2.468$ & \si{\kilogram}\\
+$L$ & arm length & $0.225$ & \si{\meter}\\
+$J_{xx}=J_{yy}$ & roll/pitch inertia & $4.856\times10^{-3}$ & \si{\kilogram\meter\squared}\\
+$J_{zz}$ & yaw inertia & $8.801\times10^{-3}$ & \si{\kilogram\meter\squared}\\
+$I_r$ & rotor inertia & $3.357\times10^{-5}$ & \si{\kilogram\meter\squared}\\
+$k_f$ & thrust coefficient & $2.980\times10^{-6}$ & \si{\newton\second\squared\per\radian\squared}\\
+$k_m$ & drag-torque coefficient & $1.140\times10^{-7}$ & \si{\newton\meter\second\squared\per\radian\squared}\\
+$\beta_i$ & rotor azimuths & $30^\circ,90^\circ,\dots,330^\circ$ & --\\
+$\sigma_i$ & spin directions & $+,-,+,-,+,-$ & --\\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section{Fixed-wing (Aerosonde)}
+
+\begin{table}[h]
+\centering
+\caption{Aerosonde airframe, propulsion and geometric parameters
+(\cref{ch:fixedwing}).}
+\label{tab:fw-params}
+\begin{tabular}{@{}llll@{}}
+\toprule
+Symbol & Meaning & Value & Unit\\
+\midrule
+$m$ & mass & $13.5$ & \si{\kilogram}\\
+$J_x,J_y,J_z$ & inertias & $0.8244,\ 1.135,\ 1.759$ & \si{\kilogram\meter\squared}\\
+$J_{xz}$ & product of inertia & $0.1204$ & \si{\kilogram\meter\squared}\\
+$S$ & wing area & $0.55$ & \si{\meter\squared}\\
+$b$ & wingspan & $2.8956$ & \si{\meter}\\
+$c$ & mean chord & $0.18994$ & \si{\meter}\\
+$S_{\mathrm{prop}}$ & propeller area & $0.2027$ & \si{\meter\squared}\\
+$\rho$ & air density & $1.2682$ & \si{\kilogram\per\meter\cubed}\\
+$e$ & Oswald efficiency & $0.9$ & --\\
+$k_{\mathrm{motor}}$ & motor constant & $80$ & --\\
+$C_{\mathrm{prop}}$ & propeller efficiency & $1.0$ & --\\
+$M,\ \alpha_0$ & stall sharpness, angle & $50,\ 0.4712$ & --,\ \si{\radian}\\
+$\epsilon$ & downwash & $0.1592$ & --\\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table}[h]
+\centering
+\caption{Aerosonde aerodynamic coefficients. Longitudinal (top), lateral
+(bottom).}
+\label{tab:fw-coeffs}
+\begin{tabular}{@{}lrlrlr@{}}
+\toprule
+\multicolumn{6}{@{}l}{\textbf{Longitudinal}}\\
+$C_{L_0}$ & $0.28$ & $C_{D_0}$ & $0.03$ & $C_{m_0}$ & $-0.02338$\\
+$C_{L_\alpha}$ & $3.45$ & $C_{D_\alpha}$ & $0.30$ & $C_{m_\alpha}$ & $-0.38$\\
+$C_{L_q}$ & $0.0$ & $C_{D_p}$ & $0.0437$ & $C_{m_q}$ & $-3.6$\\
+$C_{L_{\delta_e}}$ & $-0.36$ & $C_{D_{\delta_e}}$ & $0.0$ & $C_{m_{\delta_e}}$ & $-0.5$\\
+\midrule
+\multicolumn{6}{@{}l}{\textbf{Lateral}}\\
+$C_{Y_0}$ & $0.0$ & $C_{\ell_0}$ & $0.0$ & $C_{n_0}$ & $0.0$\\
+$C_{Y_\beta}$ & $-0.98$ & $C_{\ell_\beta}$ & $-0.12$ & $C_{n_\beta}$ & $0.25$\\
+$C_{Y_p}$ & $0.0$ & $C_{\ell_p}$ & $-0.26$ & $C_{n_p}$ & $0.022$\\
+$C_{Y_r}$ & $0.0$ & $C_{\ell_r}$ & $0.14$ & $C_{n_r}$ & $-0.35$\\
+$C_{Y_{\delta_a}}$ & $0.0$ & $C_{\ell_{\delta_a}}$ & $0.08$ & $C_{n_{\delta_a}}$ & $0.06$\\
+$C_{Y_{\delta_r}}$ & $-0.17$ & $C_{\ell_{\delta_r}}$ & $0.105$ & $C_{n_{\delta_r}}$ & $-0.032$\\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\noindent The trim of \cref{ch:fixedwing} and the fixed-wing simulation of
+\cref{ch:simulation} use these values; the numerically computed
+straight-and-level trim at \SI{35}{\meter\per\second} is
+$(\alpha^\star,\delta_e^\star,\delta_t^\star)=(0.20^\circ,-2.83^\circ,0.464)$.

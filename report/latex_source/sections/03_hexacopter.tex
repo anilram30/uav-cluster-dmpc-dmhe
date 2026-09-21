@@ -1,0 +1,314 @@
+\chapter{Hexacopter Dynamic Model with Quaternion Attitude}
+\label{ch:hexacopter}
+
+This chapter derives the complete nonlinear dynamic model of a hexacopter from
+first principles. The attitude is represented by a unit quaternion
+(\cref{sec:quaternions}), which avoids the gimbal-lock singularity of Euler
+angles and admits the norm-preserving integrator of \cref{eq:qint}---both
+essential for a vehicle that may execute large, aggressive attitude changes. The
+derivation proceeds from the state definition through the kinematics, the
+translational and rotational dynamics, the rotor and control-allocation models,
+to the assembled state-space form, its discretisation, Jacobians and
+differential-flatness structure. Numerical validation of every relation closes
+the chapter.
+
+\section{Frames, state and inputs}
+
+We use a $z$-up inertial frame $\Frame{i}$ (ENU) so that the collective rotor
+thrust acts along the positive body axis $\vv{b}_3$ and gravity along
+$-\vv{e}_3$. The vehicle is a rigid body of mass $m$ with inertia tensor
+$\mat{J}=\diag(J_{xx},J_{yy},J_{zz})$ about the centre of mass; for the symmetric
+airframe modelled here the products of inertia vanish. The $13$-dimensional state
+collects inertial position, inertial velocity, the body-to-inertial attitude
+quaternion and the body angular velocity,
+\begin{equation}
+\state=\bigl(\vv{p}\T,\ \vv{v}\T,\ \quat{q}\T,\ \vv{\omega}\T\bigr)\T\in\R^{13},
+\qquad
+\vv{p},\vv{v}\in\R^3,\ \quat{q}\in\Sph^3,\ \vv{\omega}\in\R^3.
+\label{eq:hexa-state}
+\end{equation}
+The control input is the \emph{wrench} of collective thrust and body torque,
+\begin{equation}
+\ctrl=\bigl(T,\ \vv{\tau}\T\bigr)\T=(T,\tau_x,\tau_y,\tau_z)\T\in\R^4,
+\label{eq:hexa-input}
+\end{equation}
+which is realised physically by the six rotor speeds through the control
+allocation of \cref{sec:hexa-mixer}. Treating the wrench as the input keeps the
+rigid-body dynamics independent of the rotor count and geometry; the allocation
+is a static, invertible map inserted between the controller and the actuators.
+
+\section{Attitude kinematics}
+
+The attitude quaternion $\quat{q}=\mat{R}_b^i$ maps body-resolved vectors to the
+inertial frame through $\mat{R}(\quat{q})$ of \cref{eq:Rquat-expanded}. With body
+angular velocity $\vv{\omega}$, the quaternion obeys the kinematic relation
+\cref{eq:qkin},
+\begin{equation}
+\dot{\quat{q}}=\tfrac12\,\quat{q}\qmul(0,\vv{\omega})
+=\tfrac12\,\bm{\Omega}(\vv{\omega})\,\quat{q},
+\label{eq:hexa-qkin}
+\end{equation}
+with $\bm{\Omega}$ from \cref{eq:Omega}. In a numerical integrator the unit-norm
+constraint is maintained exactly by the exponential update \cref{eq:qint};
+between full steps we renormalise $\quat{q}\leftarrow\quat{q}/\norm{\quat{q}}$ as
+a safeguard against floating-point drift.
+
+\section{Translational dynamics}
+
+The only forces on the airframe are gravity and the collective rotor thrust
+(aerodynamic drag is included as a lumped term below). The thrust acts along the
+body axis $\vv{b}_3$ with magnitude $T$; expressed in the inertial frame it is
+$\mat{R}(\quat{q})\,T\vv{e}_3$. Newton's second law \cref{eq:newton} gives
+\begin{align}
+\dot{\vv{p}} &= \vv{v}, \label{eq:hexa-pdot}\\
+m\,\dot{\vv{v}} &= -\,m g\,\vv{e}_3 + \mat{R}(\quat{q})\,T\vv{e}_3
+\;-\; \vv{D}, \label{eq:hexa-vdot}
+\end{align}
+where $\vv{e}_3=(0,0,1)\T$, $g=\SI{9.81}{\meter\per\second\squared}$, and
+$\vv{D}=c_D\,\vv{v}$ is a first-order translational drag with lumped coefficient
+$c_D\ge0$ (set to a small value; it may be replaced by a rotor-drag model
+without changing the structure). Dividing \cref{eq:hexa-vdot} by $m$,
+\begin{equation}
+\dot{\vv{v}} = -g\,\vv{e}_3 + \frac{T}{m}\,\mat{R}(\quat{q})\,\vv{e}_3
+- \frac{c_D}{m}\,\vv{v}.
+\label{eq:hexa-vdot2}
+\end{equation}
+The third column of $\mat{R}(\quat{q})$ is the body-$z$ axis in inertial
+coordinates; \cref{eq:hexa-vdot2} therefore says that the thrust accelerates the
+vehicle along wherever ``up'' currently points, which is the essential coupling
+between attitude and translation that the controller must invert
+(\cref{ch:peragent}).
+
+\section{Rotational dynamics}
+
+Euler's equation \cref{eq:euler} with the body torque $\vv{\tau}$ from the rotors
+gives
+\begin{equation}
+\mat{J}\,\dot{\vv{\omega}} = -\,\vv{\omega}\times\bigl(\mat{J}\vv{\omega}\bigr)
++\vv{\tau},
+\qquad\text{\ie}\qquad
+\dot{\vv{\omega}} = \mat{J}^{-1}\!\bigl(\vv{\tau}-\vv{\omega}\times\mat{J}\vv{\omega}\bigr).
+\label{eq:hexa-wdot}
+\end{equation}
+With $\mat{J}=\diag(J_{xx},J_{yy},J_{zz})$ the gyroscopic cross-coupling expands
+componentwise to
+\begin{equation}
+\dot{\omega}_x=\frac{\tau_x+(J_{yy}-J_{zz})\,\omega_y\omega_z}{J_{xx}},\ \
+\dot{\omega}_y=\frac{\tau_y+(J_{zz}-J_{xx})\,\omega_z\omega_x}{J_{yy}},\ \
+\dot{\omega}_z=\frac{\tau_z+(J_{xx}-J_{yy})\,\omega_x\omega_y}{J_{zz}}.
+\label{eq:hexa-wdot-comp}
+\end{equation}
+A residual gyroscopic torque from the spinning rotors,
+$\vv{\tau}_{\text{gyro}}=-\,\vv{\omega}\times\sum_i I_r\,\Omega_i\,\vv{e}_3$ with
+rotor inertia $I_r$, is negligible in balanced hover (the signed rotor-speed sum
+is near zero) and is omitted from the nominal model; it can be added to
+\cref{eq:hexa-wdot} without altering the structure.
+
+\section{Rotor thrust and torque}
+\label{sec:hexa-rotor}
+
+Each rotor $i$ spins at angular speed $\Omega_i$ and, by momentum theory in the
+operating regime, produces a thrust and a reaction (drag) torque quadratic in
+$\Omega_i$,
+\begin{equation}
+f_i = k_f\,\Omega_i^2, \qquad q_i = k_m\,\Omega_i^2,
+\label{eq:rotor-ft}
+\end{equation}
+with thrust coefficient $k_f>0$ and drag-torque coefficient $k_m>0$. The reaction
+torque acts about the rotor axis, opposing its spin: a rotor spinning counter-%
+clockwise (angular momentum along $+\vv{b}_3$) exerts a reaction torque on the
+airframe along $-\vv{b}_3$, and vice versa. We let $\sigma_i\in\{+1,-1\}$ denote
+the \emph{sign of the yaw reaction torque} of rotor $i$ (so $\sigma_i=-1$ for a
+counter-clockwise rotor), and introduce the torque-to-thrust ratio
+$c_\tau=k_m/k_f$, so that the reaction torque about $\vv{b}_3$ is
+$\sigma_i c_\tau f_i$.
+
+\section{Control allocation (the mixer)}
+\label{sec:hexa-mixer}
+
+The six rotors sit at the ends of arms of length $L$ at azimuth angles
+$\beta_i$ around the body $z$-axis; for the ``X'' configuration used here,
+$\beta_i\in\{30^\circ,90^\circ,150^\circ,210^\circ,270^\circ,330^\circ\}$, and
+the spin directions alternate, $\sigma_i=(+1,-1,+1,-1,+1,-1)$, so that the net
+reaction torque vanishes in hover (\cref{fig:mixer}). Rotor $i$ is located at
+$\vv{r}_i=L(\cos\beta_i,\sin\beta_i,0)\T$ and produces the body force
+$f_i\vv{e}_3$ and the reaction torque $\sigma_i c_\tau f_i\vv{e}_3$.
+
+\begin{figure}[t]
+\centering
+\begin{tikzpicture}[>=Latex,scale=1.05]
+  \def\L{2.1}
+  \foreach \a/\lab/\spin/\col in {30/1/+/accent,90/2/-/Maroon,150/3/+/accent,
+        210/4/-/Maroon,270/5/+/accent,330/6/-/Maroon}{
+    \coordinate (r\lab) at (\a:\L);
+    \draw[thick,gray] (0,0)--(\a:\L);
+    \filldraw[\col!75,draw=black] (\a:\L) circle (0.42);
+    \node[white,font=\small\bfseries] at (\a:\L) {\lab};
+    \node[font=\scriptsize] at (\a:\L+0.72) {$\sigma_{\lab}\!=\!\spin$};
+  }
+  % axes
+  \draw[->,thick] (0,0)--(1.0,0) node[right]{$\vv{b}_1$};
+  \draw[->,thick] (0,0)--(0,1.0) node[above]{$\vv{b}_2$};
+  \node at (0.32,-0.3){$L$};
+  \draw[<->,gray] (0,0)--(30:\L) ;
+  \node[font=\scriptsize] at (18:1.1){$\beta_i$};
+  \filldraw (0,0) circle (0.05);
+\end{tikzpicture}
+\caption{Hexacopter rotor geometry (top view, ``X'' configuration). Rotors are
+at azimuths $\beta_i$ on arms of length $L$; blue/red mark the two spin senses,
+whose yaw reaction-torque signs $\sigma_i$ alternate around the ring so the hover
+reaction torque cancels ($\sum_i\sigma_i=0$).}
+\label{fig:mixer}
+\end{figure}
+
+Summing the rotor contributions gives the wrench. The collective thrust is
+$T=\sum_i f_i$. The torque about the body axes is
+$\vv{\tau}=\sum_i\bigl(\vv{r}_i\times f_i\vv{e}_3+\sigma_i c_\tau f_i\vv{e}_3\bigr)$;
+using $\vv{r}_i\times\vv{e}_3=(r_{i,y},-r_{i,x},0)\T=L(\sin\beta_i,-\cos\beta_i,0)\T$,
+\begin{equation}
+\begin{bmatrix} T\\ \tau_x\\ \tau_y\\ \tau_z\end{bmatrix}
+=\underbrace{\begin{bmatrix}
+1 & 1 & 1 & 1 & 1 & 1\\
+L\sin\beta_1 & \cdots & & & & L\sin\beta_6\\
+-L\cos\beta_1 & \cdots & & & & -L\cos\beta_6\\
+\sigma_1 c_\tau & \cdots & & & & \sigma_6 c_\tau
+\end{bmatrix}}_{\displaystyle \mat{M}\in\R^{4\times6}}
+\begin{bmatrix} f_1\\ f_2\\ \vdots\\ f_6\end{bmatrix},
+\qquad f_i=k_f\Omega_i^2.
+\label{eq:mixer}
+\end{equation}
+The $4\times6$ \emph{mixer} $\mat{M}$ maps the six rotor thrusts to the four
+wrench components. Because there are six actuators and four controlled degrees of
+freedom, $\mat{M}$ has a two-dimensional null space: the hexacopter is
+\emph{over-actuated}. This redundancy is the origin of its single-rotor-failure
+tolerance---with one rotor lost the remaining five still span the wrench space
+for the thrust and the two tilt torques---and is analysed in general in
+\cite{michieletto2018fundamental}.
+
+Given a commanded wrench $\ctrl$, the rotor thrusts are recovered by the
+minimum-norm (Moore--Penrose) pseudo-inverse,
+\begin{equation}
+\vv{f}^{\star}=\mat{M}^{\dagger}\ctrl,
+\qquad
+\mat{M}^{\dagger}=\mat{M}\T\bigl(\mat{M}\mat{M}\T\bigr)^{-1},
+\qquad
+\Omega_i=\sqrt{\max(f_i^{\star},0)/k_f},
+\label{eq:mixer-inv}
+\end{equation}
+followed by clipping to the physical speed range $0\le\Omega_i\le\Omega_{\max}$.
+The pseudo-inverse selects, among all rotor-thrust vectors producing the demanded
+wrench, the one of least $\ell_2$ norm, which minimises the electrical power to
+first order. Since $\mat{M}$ has full row rank (\cref{prop:mixer}),
+$\mat{M}\mat{M}^{\dagger}=\mat{I}_4$, so the realised wrench equals the commanded
+wrench whenever the rotor speeds stay within their limits.
+
+\begin{proposition}[Mixer rank and hover]
+\label{prop:mixer}
+For the ``X'' hexacopter with $L>0$, $k_f>0$, $c_\tau>0$ and alternating spins,
+the mixer $\mat{M}$ in \cref{eq:mixer} has full row rank $4$, and the hover
+wrench $\ctrl_{\mathrm{hov}}=(mg,0,0,0)\T$ is produced by the equal rotor speeds
+$\Omega_i=\sqrt{mg/(6k_f)}$ for all $i$.
+\end{proposition}
+\begin{proof}[Sketch]
+The four rows of $\mat{M}$ are the constant row $\vv{1}\T$, the two trigonometric
+rows $L\sin\beta_i$ and $-L\cos\beta_i$, and the alternating-sign row
+$\sigma_ic_\tau$. Over the six equally spaced azimuths these four length-six
+vectors are linearly independent, so $\operatorname{rank}\mat{M}=4$. At hover,
+equal thrusts $f_i=mg/6$ give $T=mg$; the trigonometric sums
+$\sum_i\sin\beta_i=\sum_i\cos\beta_i=0$ annul $\tau_x,\tau_y$; and the alternating
+signs sum to zero, annulling $\tau_z$. Then $f_i=k_f\Omega_i^2$ gives the stated
+speed. The rank and the round-trip $\mat{M}\mat{M}^{\dagger}=\mat{I}_4$ are
+verified numerically in \cref{sec:hexa-validation}.
+\end{proof}
+
+\section{Assembled nonlinear model}
+
+Collecting \cref{eq:hexa-pdot,eq:hexa-vdot2,eq:hexa-qkin,eq:hexa-wdot}, the
+hexacopter is the $13$-state, $4$-input control-affine-in-thrust system
+\begin{equation}
+\dot{\state}=\vv{f}(\state,\ctrl)=
+\begin{bmatrix}
+\vv{v}\\[2pt]
+-g\vv{e}_3+\dfrac{T}{m}\mat{R}(\quat{q})\vv{e}_3-\dfrac{c_D}{m}\vv{v}\\[6pt]
+\tfrac12\,\bm{\Omega}(\vv{\omega})\,\quat{q}\\[2pt]
+\mat{J}^{-1}\!\bigl(\vv{\tau}-\vv{\omega}\times\mat{J}\vv{\omega}\bigr)
+\end{bmatrix}.
+\label{eq:hexa-full}
+\end{equation}
+This $\vv{f}$ is the vehicle dynamics $\vv{f}_i$ of \cref{eq:agent-generic} for a
+multirotor agent; it feeds directly into the MPC controller and MHE estimator of
+\cref{ch:peragent}.
+
+\section{Discretisation and Jacobians}
+\label{sec:hexa-disc}
+
+The solvers of \cref{ch:peragent} require a discrete-time map and its
+sensitivities. We integrate \cref{eq:hexa-full} over a sampling interval $T_s$
+with a fourth-order Runge--Kutta (RK4) scheme applied to the vector part
+$(\vv{p},\vv{v},\vv{\omega})$, while the quaternion is advanced by the exact
+group update \cref{eq:qint} with the mean body rate over the step; this hybrid
+integrator keeps $\norm{\quat{q}}=1$ while retaining fourth-order accuracy in the
+translational and rotational states. The result is the discrete map
+\begin{equation}
+\state_{k+1}=\vv{f}_d(\state_k,\ctrl_k),
+\qquad
+\mat{A}_k=\frac{\partial\vv{f}_d}{\partial\state}\Big|_{\state_k,\ctrl_k},
+\quad
+\mat{B}_k=\frac{\partial\vv{f}_d}{\partial\ctrl}\Big|_{\state_k,\ctrl_k}.
+\label{eq:hexa-disc}
+\end{equation}
+The blocks of $\mat{A}_k$ and $\mat{B}_k$ follow by the chain rule through the
+RK4 stages; the analytic expressions for the continuous Jacobians
+$\partial\vv{f}/\partial\state$ and $\partial\vv{f}/\partial\ctrl$ are collected
+in \cref{app:jac}. Two entries are worth noting because the controller relies on
+them: $\partial\dot{\vv{v}}/\partial T=\tfrac1m\mat{R}(\quat{q})\vv{e}_3$, the
+thrust axis, and $\partial\dot{\vv{\omega}}/\partial\vv{\tau}=\mat{J}^{-1}$, the
+inverse inertia.
+
+\section{Differential flatness}
+\label{sec:hexa-flatness}
+
+The hexacopter is \emph{differentially flat} in the outputs
+$(\vv{p},\psi)$---position and yaw \cite{mellinger2011minimum}. This structure is
+used by the position controller of \cref{ch:dmpc} to convert a commanded inertial
+acceleration $\vv{a}_{\mathrm{cmd}}$ into a thrust magnitude and a desired
+attitude. The required net specific force is $\vv{f}_{\mathrm{sp}}
+=\vv{a}_{\mathrm{cmd}}+g\vv{e}_3$; the thrust and body-$z$ axis are
+\begin{equation}
+T=m\,\norm{\vv{f}_{\mathrm{sp}}},\qquad
+\vv{b}_3^{\mathrm{des}}=\frac{\vv{f}_{\mathrm{sp}}}{\norm{\vv{f}_{\mathrm{sp}}}},
+\label{eq:flat1}
+\end{equation}
+and, with a desired yaw $\psi_{\mathrm{des}}$ fixing the heading intermediate
+vector $\vv{b}_1^{c}=(\cos\psi_{\mathrm{des}},\sin\psi_{\mathrm{des}},0)\T$, the
+remaining axes are
+\begin{equation}
+\vv{b}_2^{\mathrm{des}}=\frac{\vv{b}_3^{\mathrm{des}}\times\vv{b}_1^{c}}
+{\norm{\vv{b}_3^{\mathrm{des}}\times\vv{b}_1^{c}}},\qquad
+\vv{b}_1^{\mathrm{des}}=\vv{b}_2^{\mathrm{des}}\times\vv{b}_3^{\mathrm{des}},\qquad
+\mat{R}_{\mathrm{des}}=\bigl[\vv{b}_1^{\mathrm{des}}\ \vv{b}_2^{\mathrm{des}}\ \vv{b}_3^{\mathrm{des}}\bigr].
+\label{eq:flat2}
+\end{equation}
+A safety-critical detail used in \cref{ch:dmpc} is a \emph{tilt limit}: the
+horizontal component of $\vv{f}_{\mathrm{sp}}$ is capped so that the commanded
+attitude never exceeds a maximum tilt $\theta_{\max}$ from vertical, which keeps
+the inner attitude loop able to track the outer command without the vehicle
+approaching inversion.
+
+\section{Numerical validation}
+\label{sec:hexa-validation}
+
+Every relation above is exercised in the accompanying code. The quaternion
+identities of \cref{sec:quaternions} hold to machine precision: $\mat{R}(\quat{q})$
+is orthonormal with unit determinant, the homomorphism
+$\mat{R}(\quat{p}\qmul\quat{q})=\mat{R}(\quat{p})\mat{R}(\quat{q})$ holds, the
+kinematic maps \cref{eq:hexa-qkin} agree,
+$\tfrac12\bm{\Omega}(\vv{\omega})\quat{q}=\tfrac12\quat{q}\qmul(0,\vv{\omega})$,
+and the exponential integrator \cref{eq:qint} keeps
+$\bigl|\,\norm{\quat{q}}-1\,\bigr|<10^{-15}$ over $10^{4}$ steps. The mixer
+$\mat{M}$ has rank $4$ and $\mat{M}\mat{M}^{\dagger}=\mat{I}_4$ to
+$10^{-10}$; at hover the six rotor speeds are equal (spread $<10^{-13}$) and
+$T=mg$; and, as required of an equilibrium, $\dot{\state}=\vv{0}$ at
+$\state_{\mathrm{hov}}$ with $\ctrl_{\mathrm{hov}}$. The physical parameters used
+throughout, drawn from a published hexacopter model, are listed in
+\cref{tab:hexa-params} (\cref{app:param}).

@@ -1,0 +1,121 @@
+\documentclass[11pt,a4paper,openany]{report}
+
+% ---------------------------------------------------------------- packages
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\IfFileExists{lmodern.sty}{\usepackage{lmodern}}{}
+\usepackage[margin=2.5cm]{geometry}
+\usepackage{amsmath,amssymb,amsthm,mathtools,bm}
+\usepackage{graphicx}
+\usepackage{booktabs,array,longtable,multirow}
+\usepackage{siunitx}
+\usepackage{xcolor}
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta,positioning,calc,shapes.geometric,backgrounds,fit,3d}
+\usepackage{caption,subcaption}
+\usepackage[ruled,vlined,linesnumbered]{algorithm2e}
+\usepackage{enumitem}
+\usepackage[protrusion=true,expansion=false]{microtype}
+\usepackage[colorlinks=true,linkcolor=NavyBlue,citecolor=OliveGreen,urlcolor=Maroon]{hyperref}
+\usepackage[nameinlink,capitalise]{cleveref}
+
+\definecolor{NavyBlue}{RGB}{20,50,120}
+\definecolor{OliveGreen}{RGB}{30,110,60}
+\definecolor{Maroon}{RGB}{140,40,40}
+\definecolor{panel}{RGB}{244,246,250}
+\definecolor{accent}{RGB}{43,108,176}
+
+\captionsetup{font=small,labelfont=bf}
+\sisetup{per-mode=symbol,detect-all}
+
+% ---------------------------------------------------------------- theorems
+\theoremstyle{definition}
+\newtheorem{definition}{Definition}[chapter]
+\newtheorem{assumption}{Assumption}[chapter]
+\newtheorem{remark}{Remark}[chapter]
+\theoremstyle{plain}
+\newtheorem{theorem}{Theorem}[chapter]
+\newtheorem{proposition}{Proposition}[chapter]
+\newtheorem{lemma}{Lemma}[chapter]
+\newtheorem{corollary}{Corollary}[chapter]
+
+% ---------------------------------------------------------------- notation macros
+\newcommand{\R}{\mathbb{R}}
+\newcommand{\SO}{\mathsf{SO}}
+\newcommand{\se}{\mathfrak{se}}
+\newcommand{\so}{\mathfrak{so}}
+\newcommand{\Sph}{\mathbb{S}}
+\newcommand{\vv}[1]{\bm{#1}}                 % vectors
+\newcommand{\mat}[1]{\mathbf{#1}}            % matrices
+\newcommand{\quat}[1]{\bm{#1}}              % quaternions
+\newcommand{\qmul}{\otimes}                  % quaternion product
+\newcommand{\conj}[1]{#1^{\ast}}
+\newcommand{\skewm}[1]{\lfloor #1 \rfloor_{\times}}
+\newcommand{\T}{^{\mathsf{T}}}
+\newcommand{\Rot}{\mat{R}}
+\newcommand{\ie}{\textit{i.e.}\ }
+\newcommand{\eg}{\textit{e.g.}\ }
+\newcommand{\etal}{\textit{et al.}}
+\newcommand{\Frame}[1]{\mathcal{F}^{#1}}
+\newcommand{\est}[1]{\hat{#1}}
+\newcommand{\norm}[1]{\left\lVert #1 \right\rVert}
+\newcommand{\abs}[1]{\left\lvert #1 \right\rvert}
+\newcommand{\diag}{\operatorname{diag}}
+\newcommand{\tr}{\operatorname{tr}}
+\newcommand{\Exp}{\operatorname{Exp}}
+\newcommand{\Log}{\operatorname{Log}}
+\newcommand{\half}{\tfrac{1}{2}}
+\newcommand{\Neigh}{\mathcal{N}}
+\newcommand{\Graph}{\mathcal{G}}
+\newcommand{\Lap}{\mat{L}}
+\newcommand{\ctrl}{\vv{u}}
+\newcommand{\state}{\vv{x}}
+\newcommand{\dwn}{\vv{w}}
+
+\newcommand{\keybox}[1]{\par\vspace{2pt}\noindent%
+\colorbox{panel}{\parbox{\dimexpr\linewidth-2\fboxsep}{\small #1}}\par\vspace{2pt}}
+
+\setlength{\parskip}{0.35em}
+\renewcommand{\arraystretch}{1.15}
+
+% Absorb the last few points of stubborn lines into interword space as a last
+% resort, so no paragraph line protrudes past the text block.
+\setlength{\emergencystretch}{3em}
+\hyphenpenalty=50
+\tolerance=1200
+
+% ================================================================ document
+\begin{document}
+
+\input{sections/00_titlepage}
+
+\cleardoublepage
+\pagenumbering{roman}
+\input{sections/00_abstract}
+\tableofcontents
+\input{sections/00_nomenclature}
+
+\cleardoublepage
+\pagenumbering{arabic}
+
+\input{sections/01_introduction}
+\input{sections/02_preliminaries}
+\input{sections/03_hexacopter}
+\input{sections/04_fixedwing}
+\input{sections/05_peragent}
+\input{sections/06_dmhe}
+\input{sections/07_dmpc}
+\input{sections/08_formation}
+\input{sections/09_architecture}
+\input{sections/10_simulation}
+\input{sections/11_conclusion}
+
+\appendix
+\input{sections/A_quaternion}
+\input{sections/B_jacobians}
+\input{sections/C_parameters}
+
+\bibliographystyle{ieeetr}
+\bibliography{refs}
+
+\end{document}

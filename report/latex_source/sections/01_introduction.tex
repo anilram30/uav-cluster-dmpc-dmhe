@@ -1,0 +1,139 @@
+\chapter{Introduction}
+\label{ch:intro}
+
+\section{Motivation}
+
+Autonomous aerial systems are moving from single, monolithic vehicles toward
+\emph{clusters}: coordinated groups of many UAVs that share sensing, computation
+and objectives. A cluster survives the loss of individual members, covers more
+ground per unit time, localises targets by triangulation that no single vehicle
+can achieve, and reshapes itself on demand into search lines, perimeter rings or
+convoy escorts. Realising these behaviours in the field forces three problems
+together that are usually studied in isolation.
+
+First, the vehicles are \emph{dynamically heterogeneous}. A multirotor
+hexacopter hovers, translates in any direction and reorients almost
+instantaneously, but is energetically expensive and slow; a fixed-wing aircraft
+is efficient and fast but cannot stop, must maintain airspeed above stall and
+turns only by banking. A framework that is to command a mixed fleet must model
+both to the same fidelity and expose a common control interface. Second, the
+vehicles operate under \emph{hard physical constraints}---thrust and actuator
+limits, minimum airspeeds, current and voltage envelopes, no-fly volumes and,
+above all, mutual collision avoidance---that are safety-critical and active
+exactly when the mission is most demanding. Third, coordination must be
+\emph{distributed and real-time}: bandwidth is limited, a central node is a
+single point of failure, and every vehicle must close its own estimation and
+control loops at rates measured in hundreds of hertz on an embedded
+companion computer.
+
+This report addresses the three problems jointly. It develops complete,
+first-principles dynamic models of a quaternion-attitude hexacopter and of a
+six-degree-of-freedom fixed-wing aircraft; it places at the core of each agent a
+constrained real-time nonlinear model-predictive \emph{controller} and a
+constrained real-time moving-horizon \emph{estimator}; and it builds around that
+core a distributed estimation-and-control architecture that couples the agents
+over a communication graph into safe, coordinated formations.
+
+\section{Problem statement}
+
+Consider a cluster of $N_a$ UAVs indexed by $i\in\mathcal V=\{1,\dots,N_a\}$,
+each with nonlinear continuous-time dynamics
+\begin{equation}
+\dot{\state}_i = \vv{f}_i(\state_i,\ctrl_i), \qquad
+\vv{y}_i = \vv{h}_i(\state_i) + \vv{n}_i,
+\label{eq:agent-generic}
+\end{equation}
+where $\state_i$ is the vehicle state, $\ctrl_i$ its control input, $\vv{y}_i$ a
+vector of noisy onboard and inter-agent measurements, and $\vv{n}_i$ measurement
+noise. The vehicle class of agent $i$---hexacopter or fixed-wing---fixes the
+form of $\vv{f}_i$ and $\vv{h}_i$, derived in
+\cref{ch:hexacopter,ch:fixedwing}. The agents share a time-varying communication
+graph $\Graph=(\mathcal V,\mathcal E)$; agent $i$ may exchange messages only with
+its neighbours $\Neigh_i=\{j:(i,j)\in\mathcal E\}$. Each agent must, using only
+local measurements and neighbour messages,
+\begin{enumerate}[nosep,leftmargin=1.4em]
+  \item \emph{estimate} its own state $\state_i$ (and unmeasured disturbances)
+        in real time, remaining accurate even when a subset of its
+        absolute-positioning measurements is lost;
+  \item \emph{control} its motion to track a share of a cluster-level objective
+        (a formation, a trajectory, a coverage pattern) while respecting its own
+        actuator and state constraints; and
+  \item \emph{coordinate} with neighbours so that the cluster as a whole is
+        collision-free, connected and consistent.
+\end{enumerate}
+The design target throughout is a per-agent computation and communication budget
+small enough to run on an embedded companion computer at the vehicle's control
+rate.
+
+\section{Approach and contributions}
+
+The architecture is layered, and the layers map onto the natural language
+boundaries of an implementation (\cref{ch:architecture}):
+\begin{itemize}[nosep,leftmargin=1.4em]
+  \item a \emph{numerical core}, in C, providing the two constrained real-time
+        solvers---the MPC controller and the MHE estimator---as the per-agent
+        engine (\cref{ch:peragent});
+  \item a \emph{coordination layer}, in C++, implementing the distributed
+        estimation (\cref{ch:dmhe}) and distributed control
+        (\cref{ch:dmpc,ch:formation}) around that core, together with
+        neighbour discovery, consensus, message passing and fault handling; and
+  \item a \emph{research layer}, in Python/MATLAB, for simulation, tuning and
+        analysis (\cref{ch:simulation}).
+\end{itemize}
+The specific contributions are the following.
+\begin{enumerate}[leftmargin=1.6em]
+  \item \textbf{A complete quaternion hexacopter model
+        (\cref{ch:hexacopter})}, derived from first principles: Hamilton
+        quaternion kinematics, Newton--Euler translational and rotational
+        dynamics, the rotor thrust/torque model, and the six-rotor control
+        allocation with its rank structure, invertibility and fault tolerance,
+        followed by discretisation, analytic Jacobians and a differential-%
+        flatness map. All relations are validated numerically.
+  \item \textbf{A complete fixed-wing model (\cref{ch:fixedwing})} in the
+        Beard--McLain six-degree-of-freedom formulation, including the wind
+        triangle, the sigmoid-blended stall aerodynamics, the full force and
+        moment coefficient expansions, the product-of-inertia rotational
+        dynamics, and a numerically solved trim, on the fully parameterised
+        Aerosonde airframe.
+  \item \textbf{A generic account of the per-agent constrained real-time
+        estimator and controller (\cref{ch:peragent})} as a matched
+        estimation--control pair that imposes general nonlinear state and input
+        constraints on the full problem and executes one real-time iteration per
+        sample, exposed to the coordination layer through a clean C application
+        programming interface. The solvers' internal algorithms are separate
+        unpublished work and are treated here as a fixed, validated capability
+        specified by that interface (see the scope note in \cref{ch:peragent}).
+  \item \textbf{A distributed moving-horizon estimator (\cref{ch:dmhe})} in
+        which agents fuse relative inter-agent measurements to their
+        well-localised neighbours, with a covariance-aware fusion rule that
+        keeps GNSS-denied agents accurate through absolute-positioning outages.
+  \item \textbf{A distributed model-predictive controller
+        (\cref{ch:dmpc,ch:formation})} that couples the agents through formation
+        objectives and control-barrier-function collision-avoidance constraints,
+        coordinated by consensus and alternating-direction methods, with the
+        cooperative-DMPC stability and recursive-feasibility properties stated
+        and attributed.
+  \item \textbf{A reference implementation and simulation study
+        (\cref{ch:architecture,ch:simulation})} on the full nonlinear plants,
+        exercising formation assembly, reconfiguration, collision avoidance and
+        GNSS-denied localisation for both vehicle classes.
+\end{enumerate}
+
+\section{Report organisation}
+
+\Cref{ch:preliminaries} fixes the frames, rotation representations, rigid-body
+mechanics and graph-theoretic tools used throughout.
+\Cref{ch:hexacopter,ch:fixedwing} derive the two vehicle models.
+\Cref{ch:peragent} describes the per-agent estimator and controller.
+\Cref{ch:dmhe,ch:dmpc,ch:formation} build the distributed estimation, control
+and formation layers. \Cref{ch:architecture} sets out the software architecture
+and \cref{ch:simulation} the simulation study. \Cref{ch:conclusion} concludes.
+Appendices collect quaternion identities, the full hexacopter Jacobians and the
+complete vehicle parameter tables.
+
+\keybox{\textbf{A note on the per-agent solvers.} Throughout this report the two
+onboard solvers are referred to generically as ``the MPC controller'' and ``the
+MHE estimator''. Their internal algorithms are treated as a fixed, validated
+capability accessed through the interface of \cref{ch:peragent}; the distributed
+framework depends only on that interface and not on the solvers' internal
+construction.}

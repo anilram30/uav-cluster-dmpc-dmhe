@@ -1,0 +1,107 @@
+\chapter{Software Architecture}
+\label{ch:architecture}
+
+The mathematical framework maps onto a three-language software architecture whose
+boundaries follow the natural separation of concerns: a numerical core in C, a
+coordination layer in C++, and a research layer in Python. The guiding principle
+is that the real-time numerical core is an asset to be preserved behind a clean
+interface, not rewritten each time the surrounding system grows.
+
+\section{Layered design}
+
+\Cref{fig:arch} shows the architecture. Each agent runs an identical stack.
+
+\begin{figure}[t]
+\centering
+\resizebox{\linewidth}{!}{%
+\begin{tikzpicture}[>=Latex,node distance=5mm,
+   box/.style={draw,rounded corners=2pt,align=center,minimum height=8mm,inner sep=3pt,font=\small},
+   core/.style={box,fill=accent!14,draw=accent},
+   coord/.style={box,fill=OliveGreen!12,draw=OliveGreen},
+   res/.style={box,fill=Maroon!10,draw=Maroon},
+   lbl/.style={font=\footnotesize\itshape,gray}]
+  % core
+  \node[core] (mpc) {MPC controller\\\scriptsize(RTI, C)};
+  \node[core,right=of mpc] (mhe) {MHE estimator\\\scriptsize(RTI, C)};
+  \node[core,right=of mhe] (la) {linear algebra\\\scriptsize dense kernels (C)};
+  \node[draw=accent,rounded corners,fit=(mpc)(mhe)(la),inner sep=6pt,label={[accent]above:\textbf{Numerical core (C) --- per agent}}] (corebox) {};
+  % coordination
+  \node[coord,below=16mm of mpc] (dmhe) {DMHE\\\scriptsize relative fusion};
+  \node[coord,right=of dmhe] (dmpc) {DMPC\\\scriptsize consensus + ADMM};
+  \node[coord,right=of dmpc] (safety) {CBF safety\\\scriptsize + formation};
+  \node[coord,right=of safety] (comm) {neighbour I/O\\\scriptsize discovery, faults};
+  \node[draw=OliveGreen,rounded corners,fit=(dmhe)(dmpc)(safety)(comm),inner sep=6pt,label={[OliveGreen]below:\textbf{Coordination layer (C++)}}] (coordbox) {};
+  % transport
+  \node[box,below=20mm of dmpc,fill=black!6] (dds) {ROS\,2 / DDS / UDP\ \ \scriptsize(neighbour messages: state, covariance, dual vars)};
+  % research
+  \node[res,right=32mm of la] (py) {Python / MATLAB\\\scriptsize simulation, tuning,\\\scriptsize analysis};
+  % edges
+  \draw[<->,accent] (corebox) -- (coordbox) node[midway,right,lbl]{C API (\S\ref{sec:capi})};
+  \draw[<->] (coordbox) -- (dds);
+  \draw[<->,Maroon,dashed] (corebox.east) -- (py.west) node[midway,above,lbl]{codegen / test};
+  \draw[<->] (dds.east) -- ++(2.2,0) |- ([yshift=-2mm]comm.east) node[pos=0.25,right,lbl]{neighbours $j\in\Neigh_i$};
+\end{tikzpicture}%
+}
+\caption{Per-agent software architecture. The C numerical core exposes the two
+real-time solvers through the interface of \cref{sec:capi}; the C++ coordination
+layer wraps them with the distributed estimation, control, safety and
+communication logic; a transport layer (ROS\,2/DDS/UDP) carries neighbour
+messages; and a Python/MATLAB research layer handles simulation, tuning and
+model code generation.}
+\label{fig:arch}
+\end{figure}
+
+\paragraph{Numerical core (C).} The two solvers of \cref{ch:peragent} and their
+fixed-size linear algebra are the computational engine. They are dependency-free,
+allocation-free and statically sized, which is what lets them run deterministically
+on an embedded companion computer. Nothing in this layer knows it is part of a
+cluster: it solves one agent's estimation and control problem through the
+interface of \cref{sec:capi}.
+
+\paragraph{Coordination layer (C++).} Everything that becomes harder in a
+many-agent system lives here: neighbour discovery and the maintenance of
+$\Neigh_i$, the consensus and ADMM loops of \cref{ch:dmpc}, the relative-fusion
+logic of \cref{ch:dmhe}, the CBF safety filter, formation and reconfiguration
+management, and fault handling. C++ is the right language for this layer---object
+lifetimes, message serialisation, asynchronous callbacks and container data
+structures---while it defers all numerical heavy lifting to the C core through
+the API.
+
+\paragraph{Transport.} Neighbour messages---state estimates with covariances,
+consensus iterates, ADMM dual variables, beacons---travel over a publish/subscribe
+middleware. ROS\,2's DDS is the natural choice for its typed topics, quality-of-%
+service control and native multicast; a lightweight UDP layer suffices for a
+minimal deployment. The messages are small (an agent broadcasts $O(n_x^2)$ numbers
+per step), so the bandwidth scales with degree, not cluster size.
+
+\paragraph{Research layer (Python/MATLAB).} Simulation, controller and estimator
+tuning, parameter studies and analysis run here, together with the symbolic
+generation of the vehicle models (the model functions and their Jacobians are
+generated once from a single symbolic source and emitted as C for the core and as
+NumPy for the simulator, guaranteeing they agree). This is the layer in which the
+study of \cref{ch:simulation} is carried out.
+
+\section{Autopilot integration}
+
+On a physical vehicle the solver stack runs as a \emph{companion-computer}
+process alongside, not in place of, the low-level flight controller (\eg a PX4 or
+ArduPilot autopilot). The coordination layer publishes the flatness outputs of
+\cref{sec:hexa-flatness}---a thrust and attitude setpoint for a multirotor, or
+the airspeed/altitude/course setpoints of the fixed-wing autopilot---to the
+autopilot over its offboard interface, and the autopilot closes the fast inner
+attitude/rate loops on its own hardware. This separation keeps the certified
+inner-loop stabilisation intact while the research stack provides the outer
+estimation, control and coordination.
+
+\section{Why the core is preserved, not rewritten}
+
+A distributed system is a strong temptation to rewrite the numerical core in the
+coordination language for uniformity. The architecture deliberately resists it.
+The C core is not merely ``some C code'': it is a validated real-time optimisation
+infrastructure with established worst-case timing and memory behaviour, and
+rewriting it into C++ or Python would discard those properties for no functional
+gain---the distributed problem is a coordination problem, not a numerical one.
+Exposing a clean C API and calling it from C++ keeps the performance-critical
+path unchanged while all the genuinely new, distributed complexity is written in
+the language best suited to it. The reference implementation follows exactly this
+division.
