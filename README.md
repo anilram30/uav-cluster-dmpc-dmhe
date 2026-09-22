@@ -178,7 +178,7 @@ design and all results are the author's own and were verified against the numeri
 
 ## License
 
-MIT — see [LICENSE](LICENSE). The report text and figures are © 2026 Sreeram Anil, shared for
+Apache 2.0 — see [LICENSE](LICENSE) and [NOTICE](NOTICE). The report text and figures are © 2026 Sreeram Anil, shared for
 reading and citation.
 
 **Sreeram Anil** — MSc student, FAU Erlangen-Nürnberg · [GitHub](https://github.com/anilram30)
